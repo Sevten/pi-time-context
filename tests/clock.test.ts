@@ -10,8 +10,11 @@ import {
 describe("clock", () => {
 	it("formats a fixed minute in the frozen display time zone", () => {
 		const value = Date.UTC(2026, 7, 22, 6, 15, 59, 999);
-		expect(formatLocalMinute(value, "UTC")).toBe("2026-08-22 06:15");
-		expect(formatLocalMinute(value, "Asia/Shanghai")).toBe("2026-08-22 14:15");
+		expect(formatLocalMinute(value, "UTC")).toBe("2026-08-22 06:15 +00:00");
+		expect(formatLocalMinute(value, "Asia/Shanghai")).toBe("2026-08-22 14:15 +08:00");
+		expect(formatLocalMinute(Date.UTC(2026, 0, 22, 6, 15), "America/New_York")).toBe(
+			"2026-01-22 01:15 -05:00",
+		);
 	});
 
 	it("resolves supported zones and rejects unsupported zones", () => {

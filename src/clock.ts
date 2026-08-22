@@ -41,6 +41,7 @@ export function formatLocalMinute(epochMs: number, timeZone: string): string {
 		hour: "2-digit",
 		minute: "2-digit",
 		hourCycle: "h23",
+		timeZoneName: "longOffset",
 	}).formatToParts(epochMs);
 	const values = new Map(parts.map((part) => [part.type, part.value]));
 	const year = values.get("year");
@@ -48,10 +49,15 @@ export function formatLocalMinute(epochMs: number, timeZone: string): string {
 	const day = values.get("day");
 	const hour = values.get("hour");
 	const minute = values.get("minute");
-	if (!year || !month || !day || !hour || !minute) {
+	const timeZoneName = values.get("timeZoneName");
+	if (!year || !month || !day || !hour || !minute || !timeZoneName) {
 		throw new RangeError(`Time zone ${timeZone} did not produce complete date parts`);
 	}
-	return `${year}-${month}-${day} ${hour}:${minute}`;
+	const offset = timeZoneName === "GMT" ? "+00:00" : timeZoneName.replace(/^GMT/, "");
+	if (!/^[+-]\d{2}:\d{2}$/.test(offset)) {
+		throw new RangeError(`Time zone ${timeZone} did not produce a numeric UTC offset`);
+	}
+	return `${year}-${month}-${day} ${hour}:${minute} ${offset}`;
 }
 
 export function roundElapsedMinutes(elapsedMs: number): number {

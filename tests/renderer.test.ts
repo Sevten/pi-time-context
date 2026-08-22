@@ -14,7 +14,7 @@ describe("renderer", () => {
 			stamp: { renderVersion: 1, elapsedMinutes: 135 },
 		};
 		expect(renderDecision(decision, { ...anchor().policy, timeZone: "Asia/Shanghai" })).toBe(
-			"sent_at: 2026-08-22 14:15\nelapsed_since_last_activity: 2小时15分钟",
+			"sent_at: 2026-08-22 14:15 +08:00\nelapsed_since_last_activity: 2小时15分钟",
 		);
 	});
 

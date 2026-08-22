@@ -116,7 +116,7 @@ describe("runtime lifecycle", () => {
 		session.appendMessage("u1", first);
 		clock.value = t0 + 100;
 		const baseline = runtime.onContext({ type: "context", messages: [first] }, context);
-		expect(lastStampText(baseline.messages[0])).toBe("sent_at: 2026-08-22 06:15");
+		expect(lastStampText(baseline.messages[0])).toBe("sent_at: 2026-08-22 06:15 +00:00");
 		expect(carrierContent(first)).toBe("first");
 
 		const second = user(2, "second");
@@ -134,7 +134,7 @@ describe("runtime lifecycle", () => {
 		runtime.onMessageEnd(endEvent(third), context);
 		session.appendMessage("u3", third);
 		const nextCarrier = runtime.onContext({ type: "context", messages: [first, second, third] }, context);
-		expect(lastStampText(nextCarrier.messages[2])).toBe("sent_at: 2026-08-22 06:46");
+		expect(lastStampText(nextCarrier.messages[2])).toBe("sent_at: 2026-08-22 06:46 +00:00");
 
 		const decisions = session.customData(CARRIER_DECISION_ENTRY) as CarrierDecisionV1[];
 		expect(decisions).toHaveLength(3);
@@ -155,7 +155,7 @@ describe("runtime lifecycle", () => {
 		runtime.onMessageEnd(endEvent(second), context);
 		session.appendMessage("u2", second);
 		const transformed = runtime.onContext({ type: "context", messages: [first, second] }, context);
-		expect(lastStampText(transformed.messages[0])).toBe("sent_at: 2026-08-22 06:00");
+		expect(lastStampText(transformed.messages[0])).toBe("sent_at: 2026-08-22 06:00 +00:00");
 		expect(carrierContent(transformed.messages[1])).toBe("second");
 		const decisions = session.customData(CARRIER_DECISION_ENTRY) as CarrierDecisionV1[];
 		expect(decisions.find((item) => item.carrierEntryId === "u1")?.stamp).not.toBeNull();
@@ -204,7 +204,7 @@ describe("runtime lifecycle", () => {
 		const anchors = session.customData(SESSION_ANCHOR_ENTRY) as SessionAnchorV1[];
 		expect(anchors).toHaveLength(1);
 		expect(anchors[0]?.origin).toBe("legacy_activation");
-		expect(lastStampText(migrated.messages[1])).toBe("sent_at: 2026-08-22 06:31");
+		expect(lastStampText(migrated.messages[1])).toBe("sent_at: 2026-08-22 06:31 +00:00");
 		expect(session.customData(CARRIER_DECISION_ENTRY)).toHaveLength(1);
 	});
 
@@ -284,7 +284,7 @@ describe("runtime lifecycle", () => {
 			{ type: "context", messages: [prompt, response, resultA, resultB] },
 			context,
 		);
-		expect(lastStampText(transformed.messages[2])).toBe("sent_at: 2026-08-22 06:40");
+		expect(lastStampText(transformed.messages[2])).toBe("sent_at: 2026-08-22 06:40 +00:00");
 		expect(lastStampText(transformed.messages[3])).toBe("result");
 		const decisions = session.customData(CARRIER_DECISION_ENTRY) as CarrierDecisionV1[];
 		expect(decisions.find((item) => item.carrierEntryId === "result-a")?.stamp).not.toBeNull();

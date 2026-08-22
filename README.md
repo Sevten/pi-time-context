@@ -42,7 +42,7 @@ Pi package 会从 `src/index.ts` 加载扩展。
 新会话第一条 user 消息真正被 Pi agent loop 处理时，扩展冻结会话锚点 T0，并在该消息首次发送给模型的副本中追加：
 
 ```text
-sent_at: 2026-08-22 14:15
+sent_at: 2026-08-22 14:15 +08:00
 ```
 
 默认检查点固定为 `T0 + 30m`、`T0 + 60m`、`T0 + 90m`。扩展不启动定时器；只有新的 user 或 toolResult 即将发送给模型时才检查是否跨入新检查区间。一次跨过多个区间只追加一个时间戳。
@@ -50,7 +50,7 @@ sent_at: 2026-08-22 14:15
 当检查点已到，并且当前 carrier 距离上一 assistant 或工具活动完成时间严格超过阈值时，扩展追加第二行：
 
 ```text
-sent_at: 2026-08-22 14:15
+sent_at: 2026-08-22 14:15 +08:00
 elapsed_since_last_activity: 2小时15分钟
 ```
 
@@ -101,7 +101,7 @@ pi-time-context/carrier-decision
 
 这些 entry 只保存 epoch 毫秒、消息 entry ID、toolCallId、错误标记、策略快照和渲染决策。不会复制消息正文、工具参数或工具输出。
 
-模型可见的绝对时间固定为 `YYYY-MM-DD HH:mm`，不包含秒、显式时区、内部 ID 或上一活动的绝对完成时间。系统时钟回拨时仍可发送当前绝对时间，但会省略负的 elapsed。
+模型可见的绝对时间固定为 `YYYY-MM-DD HH:mm ±HH:mm`，包含数字 UTC 偏移但不包含秒、内部 ID 或上一活动的绝对完成时间。系统时钟回拨时仍可发送当前绝对时间，但会省略负的 elapsed。
 
 ## 缓存不变量
 
