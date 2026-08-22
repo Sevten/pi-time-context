@@ -60,8 +60,9 @@ class MockSession {
 	}
 }
 
-function createHarness(clock: MutableClock, session = new MockSession()) {
+function createHarness(clock: MutableClock, session = new MockSession(), showInjectedTime = false) {
 	const warnings: string[] = [];
+	const notifications: Array<{ message: string; level: string }> = [];
 	const pi = {
 		appendEntry: (customType: string, data: unknown) => session.appendCustom(customType, data),
 	} as unknown as ExtensionAPI;
@@ -73,6 +74,7 @@ function createHarness(clock: MutableClock, session = new MockSession()) {
 				checkpointIntervalMinutes: 30,
 				previousActivityThresholdMinutes: 30,
 				timeZone: "UTC",
+				showInjectedTime,
 			},
 			warnings: [],
 		}),
@@ -80,8 +82,11 @@ function createHarness(clock: MutableClock, session = new MockSession()) {
 	const context = {
 		cwd: "/project",
 		sessionManager: session,
+		ui: {
+			notify: (message: string, level: string) => notifications.push({ message, level }),
+		},
 	} as unknown as ExtensionContext;
-	return { runtime, session, context, warnings };
+	return { runtime, session, context, warnings, notifications };
 }
 
 function startEvent(reason: SessionStartEvent["reason"] = "startup"): SessionStartEvent {
@@ -105,6 +110,26 @@ function carrierContent(message: AgentMessage | undefined): unknown {
 }
 
 describe("runtime lifecycle", () => {
+	it("shows each newly injected time once when user visibility is enabled", async () => {
+		const t0 = Date.UTC(2026, 7, 22, 6, 15);
+		const clock = new MutableClock(t0);
+		const { runtime, session, context, notifications } = createHarness(clock, undefined, true);
+		await runtime.onSessionStart(startEvent(), context);
+
+		const first = user(1, "first");
+		runtime.onMessageEnd(endEvent(first), context);
+		session.appendMessage("u1", first);
+		runtime.onContext({ type: "context", messages: [first] }, context);
+		runtime.onContext({ type: "context", messages: [first] }, context);
+
+		expect(notifications).toEqual([
+			{
+				message: "Time context injected:\nsent_at: 2026-08-22 06:15 +00:00",
+				level: "info",
+			},
+		]);
+	});
+
 	it("anchors T0 at first user processing and keeps stamped/null decisions immutable across retries", async () => {
 		const t0 = Date.UTC(2026, 7, 22, 6, 15);
 		const clock = new MutableClock(t0);

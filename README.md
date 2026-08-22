@@ -78,7 +78,8 @@ elapsed_since_last_activity: 2小时15分钟
 {
   "checkpointIntervalMinutes": 30,
   "previousActivityThresholdMinutes": 30,
-  "timeZone": "local"
+  "timeZone": "local",
+  "showInjectedTime": false
 }
 ```
 
@@ -86,6 +87,7 @@ elapsed_since_last_activity: 2小时15分钟
 - 两个分钟值必须是 `1` 到 `10080` 之间的有限正数。
 - `timeZone` 支持 `local`、`UTC` 或运行时 `Intl` 支持的 IANA 时区，例如 `Asia/Shanghai`。
 - `local` 在创建锚点时解析为具体 IANA 时区。
+- `showInjectedTime` 默认为 `false`；设为 `true` 后，每次实际注入都会在前端显示一次通知，但仍不会修改聊天消息正文。修改后执行 `/reload` 即可对当前会话生效。
 - 策略随会话锚点冻结；修改配置只影响尚未创建锚点的会话。
 - 非法配置会告警并回退到上一层有效值或默认值，不阻止扩展启动。
 

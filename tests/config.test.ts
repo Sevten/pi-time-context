@@ -22,7 +22,7 @@ describe("configuration", () => {
 		await mkdir(join(cwd, ".pi"), { recursive: true });
 		await writeFile(
 			join(home, ".pi", "agent", "pi-time-context.json"),
-			JSON.stringify({ checkpointIntervalMinutes: 45, timeZone: "UTC" }),
+			JSON.stringify({ checkpointIntervalMinutes: 45, timeZone: "UTC", showInjectedTime: true }),
 		);
 		await writeFile(
 			join(cwd, ".pi", "pi-time-context.json"),
@@ -34,9 +34,10 @@ describe("configuration", () => {
 			checkpointIntervalMinutes: 45,
 			previousActivityThresholdMinutes: 15,
 			timeZone: "UTC",
+			showInjectedTime: true,
 		});
 		expect(result.warnings).toHaveLength(1);
-		expect(freezePolicy(result.config)).toEqual({
+			expect(freezePolicy(result.config)).toEqual({
 			checkpointIntervalMs: 45 * 60_000,
 			previousActivityThresholdMs: 15 * 60_000,
 			timeZone: "UTC",

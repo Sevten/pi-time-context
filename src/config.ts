@@ -8,6 +8,7 @@ export interface TimeContextConfig {
 	checkpointIntervalMinutes: number;
 	previousActivityThresholdMinutes: number;
 	timeZone: string;
+	showInjectedTime: boolean;
 }
 
 export interface ConfigLoadResult {
@@ -19,6 +20,7 @@ export const DEFAULT_CONFIG: Readonly<TimeContextConfig> = {
 	checkpointIntervalMinutes: 30,
 	previousActivityThresholdMinutes: 30,
 	timeZone: "local",
+	showInjectedTime: false,
 };
 
 const MIN_INTERVAL_MINUTES = 1;
@@ -68,6 +70,13 @@ function applyLayer(
 			next.timeZone = layer.timeZone;
 		} else {
 			warnings.push(`${path}: timeZone must be local, UTC, or a supported IANA time zone`);
+		}
+	}
+	if (layer.showInjectedTime !== undefined) {
+		if (typeof layer.showInjectedTime === "boolean") {
+			next.showInjectedTime = layer.showInjectedTime;
+		} else {
+			warnings.push(`${path}: showInjectedTime must be a boolean`);
 		}
 	}
 	return next;
