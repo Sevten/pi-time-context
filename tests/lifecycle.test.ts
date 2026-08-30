@@ -6,7 +6,7 @@ import type {
 	SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { TimeContextRuntime } from "../src/index.js";
+import { TimeContextRuntime, type RuntimeOptions } from "../src/index.js";
 import type { AgentMessage, MessageEndEvent } from "../src/pi-types.js";
 import {
 	ACTIVITY_FACTS_ENTRY,
@@ -60,7 +60,15 @@ class MockSession {
 	}
 }
 
-function createHarness(clock: MutableClock, session = new MockSession(), showInjectedTime = false) {
+function createHarness(
+	clock: MutableClock,
+	session = new MockSession(),
+	options: {
+		projectTrusted?: boolean;
+		configLoader?: RuntimeOptions["configLoader"];
+		showInjectedTime?: boolean;
+	} = {},
+) {
 	const warnings: string[] = [];
 	const notifications: Array<{ message: string; level: string }> = [];
 	const pi = {
@@ -69,18 +77,21 @@ function createHarness(clock: MutableClock, session = new MockSession(), showInj
 	const runtime = new TimeContextRuntime(pi, {
 		clock,
 		warn: (message) => warnings.push(message),
-		configLoader: () => ({
-			config: {
-				checkpointIntervalMinutes: 30,
-				previousActivityThresholdMinutes: 30,
-				timeZone: "UTC",
-				showInjectedTime,
-			},
-			warnings: [],
-		}),
+		configLoader:
+			options.configLoader ??
+			(() => ({
+				config: {
+					checkpointIntervalMinutes: 30,
+					previousActivityThresholdMinutes: 30,
+					timeZone: "UTC",
+					showInjectedTime: options.showInjectedTime ?? false,
+				},
+				warnings: [],
+			}))
 	});
 	const context = {
 		cwd: "/project",
+		isProjectTrusted: () => options.projectTrusted ?? true,
 		sessionManager: session,
 		ui: {
 			notify: (message: string, level: string) => notifications.push({ message, level }),
@@ -113,7 +124,9 @@ describe("runtime lifecycle", () => {
 	it("shows each newly injected time once when user visibility is enabled", async () => {
 		const t0 = Date.UTC(2026, 7, 22, 6, 15);
 		const clock = new MutableClock(t0);
-		const { runtime, session, context, notifications } = createHarness(clock, undefined, true);
+		const { runtime, session, context, notifications } = createHarness(clock, undefined, {
+			showInjectedTime: true,
+		});
 		await runtime.onSessionStart(startEvent(), context);
 
 		const first = user(1, "first");
@@ -128,6 +141,29 @@ describe("runtime lifecycle", () => {
 				level: "info",
 			},
 		]);
+	});
+
+	it("passes project trust to the configuration loader", async () => {
+		const clock = new MutableClock(100);
+		const includeProjectConfigValues: boolean[] = [];
+		const { runtime, context } = createHarness(clock, new MockSession(), {
+			projectTrusted: false,
+			configLoader: (_cwd, includeProjectConfig) => {
+				includeProjectConfigValues.push(includeProjectConfig);
+				return {
+					config: {
+						checkpointIntervalMinutes: 30,
+						previousActivityThresholdMinutes: 30,
+						timeZone: "UTC",
+					},
+					warnings: [],
+				};
+			},
+		});
+		await runtime.onSessionStart(startEvent(), context);
+		runtime.onMessageEnd(endEvent(user(1)), context);
+
+		expect(includeProjectConfigValues).toEqual([false]);
 	});
 
 	it("anchors T0 at first user processing and keeps stamped/null decisions immutable across retries", async () => {

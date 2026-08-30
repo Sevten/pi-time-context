@@ -34,7 +34,7 @@ import {
 
 export interface RuntimeOptions {
 	clock?: Clock;
-	configLoader?: (cwd: string) => ConfigLoadResult;
+	configLoader?: (cwd: string, includeProjectConfig: boolean) => ConfigLoadResult;
 	warn?: (message: string) => void;
 }
 
@@ -49,7 +49,7 @@ function emptyState(): RecoveredState {
 export class TimeContextRuntime {
 	private readonly pi: ExtensionAPI;
 	private readonly clock: Clock;
-	private readonly configLoader: (cwd: string) => ConfigLoadResult;
+	private readonly configLoader: (cwd: string, includeProjectConfig: boolean) => ConfigLoadResult;
 	private readonly externalWarn?: (message: string) => void;
 	private readonly warnings = new Set<string>();
 	private readonly tracker: ActivityTracker;
@@ -61,7 +61,9 @@ export class TimeContextRuntime {
 	constructor(pi: ExtensionAPI, options: RuntimeOptions = {}) {
 		this.pi = pi;
 		this.clock = options.clock ?? systemClock;
-		this.configLoader = options.configLoader ?? loadConfig;
+		this.configLoader =
+			options.configLoader ??
+			((cwd, includeProjectConfig) => loadConfig(cwd, { includeProjectConfig }));
 		this.externalWarn = options.warn;
 		this.tracker = new ActivityTracker(this.clock, (message) => this.warn(message));
 	}
@@ -84,8 +86,12 @@ export class TimeContextRuntime {
 		);
 	}
 
-	private createAnchor(origin: SessionAnchorV1["origin"], t0Ms: number, cwd: string): SessionAnchorV1 {
-		const loaded = this.configLoader(cwd);
+	private createAnchor(
+		origin: SessionAnchorV1["origin"],
+		t0Ms: number,
+		ctx: ExtensionContext,
+	): SessionAnchorV1 {
+		const loaded = this.configLoader(ctx.cwd, ctx.isProjectTrusted());
 		for (const warning of loaded.warnings) this.warn(warning);
 		return {
 			version: 1,
@@ -152,7 +158,7 @@ export class TimeContextRuntime {
 			.some((entry) => isSessionMessageEntry(entry) && entry.message.role === "user");
 		if (hasHistoricalUser) return;
 
-		const anchor = this.createAnchor("first_user_processed", processedAtMs, ctx.cwd);
+		const anchor = this.createAnchor("first_user_processed", processedAtMs, ctx);
 		this.pi.appendEntry(SESSION_ANCHOR_ENTRY, anchor);
 		this.state.anchor = anchor;
 		this.baselinePending = true;
@@ -221,7 +227,7 @@ export class TimeContextRuntime {
 				for (const carrier of eligible) this.activationCarrierIds.add(carrier.entryId);
 				return;
 			}
-			const anchor = this.createAnchor("legacy_activation", requestAtMs, ctx.cwd);
+			const anchor = this.createAnchor("legacy_activation", requestAtMs, ctx);
 			this.pi.appendEntry(SESSION_ANCHOR_ENTRY, anchor);
 			this.state.anchor = anchor;
 			migrationCreated = true;

@@ -1,6 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { CONFIG_DIR_NAME, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { MINUTE_MS, resolveTimeZone } from "./clock.js";
 import type { TimePolicyV1, WarningSink } from "./types.js";
 
@@ -16,6 +16,12 @@ export interface ConfigLoadResult {
 	warnings: string[];
 }
 
+export interface ConfigLoadOptions {
+	homeDirectory?: string;
+	includeProjectConfig?: boolean;
+	configDirectoryName?: string;
+}
+
 export const DEFAULT_CONFIG: Readonly<TimeContextConfig> = {
 	checkpointIntervalMinutes: 30,
 	previousActivityThresholdMinutes: 30,
@@ -25,18 +31,23 @@ export const DEFAULT_CONFIG: Readonly<TimeContextConfig> = {
 
 const MIN_INTERVAL_MINUTES = 1;
 const MAX_INTERVAL_MINUTES = 10_080;
+const SUPPORTED_CONFIG_KEYS: ReadonlySet<string> = new Set([
+	"checkpointIntervalMinutes",
+	"previousActivityThresholdMinutes",
+	"timeZone",
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function readConfigFile(path: string, warnings: string[]): Record<string, unknown> | undefined {
-	if (!existsSync(path)) return undefined;
 	try {
 		const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
 		if (isRecord(parsed)) return parsed;
 		warnings.push(`${path}: configuration root must be an object`);
 	} catch (error) {
+		if (isRecord(error) && error.code === "ENOENT") return undefined;
 		warnings.push(`${path}: ${error instanceof Error ? error.message : String(error)}`);
 	}
 	return undefined;
@@ -50,6 +61,9 @@ function applyLayer(
 ): TimeContextConfig {
 	if (!layer) return base;
 	const next = { ...base };
+	for (const key of Object.keys(layer)) {
+		if (!SUPPORTED_CONFIG_KEYS.has(key)) warnings.push(`${path}: unknown configuration key ${key}`);
+	}
 	for (const key of ["checkpointIntervalMinutes", "previousActivityThresholdMinutes"] as const) {
 		const value = layer[key];
 		if (value === undefined) continue;
@@ -82,13 +96,21 @@ function applyLayer(
 	return next;
 }
 
-export function loadConfig(cwd: string, homeDirectory = homedir()): ConfigLoadResult {
+export function loadConfig(cwd: string, options: ConfigLoadOptions = {}): ConfigLoadResult {
 	const warnings: string[] = [];
-	const globalPath = join(homeDirectory, ".pi", "agent", "pi-time-context.json");
-	const projectPath = join(cwd, ".pi", "pi-time-context.json");
+	const globalPath = options.homeDirectory
+		? join(options.homeDirectory, ".pi", "agent", "pi-time-context.json")
+		: join(getAgentDir(), "pi-time-context.json");
+	const projectPath = join(
+		cwd,
+		options.configDirectoryName ?? CONFIG_DIR_NAME,
+		"pi-time-context.json",
+	);
 	let config = { ...DEFAULT_CONFIG };
 	config = applyLayer(config, readConfigFile(globalPath, warnings), globalPath, warnings);
-	config = applyLayer(config, readConfigFile(projectPath, warnings), projectPath, warnings);
+	if (options.includeProjectConfig !== false) {
+		config = applyLayer(config, readConfigFile(projectPath, warnings), projectPath, warnings);
+	}
 	return { config, warnings };
 }
 

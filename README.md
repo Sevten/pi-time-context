@@ -14,13 +14,13 @@
 从本地目录安装：
 
 ```bash
-pi install /home/lxx/pi-time-context
+pi install /path/to/pi-time-context
 ```
 
 仅在当前项目启用：
 
 ```bash
-pi install -l /home/lxx/pi-time-context
+pi install -l /path/to/pi-time-context
 ```
 
 发布到 npm 后可使用：
@@ -32,7 +32,7 @@ pi install npm:@sevten/pi-time-context
 也可以不安装，直接试运行：
 
 ```bash
-pi -e /home/lxx/pi-time-context
+pi -e /path/to/pi-time-context
 ```
 
 Pi package 会从 `src/index.ts` 加载扩展。
@@ -66,11 +66,13 @@ elapsed_since_last_activity: 2小时15分钟
 ~/.pi/agent/pi-time-context.json
 ```
 
-项目覆盖：
+项目覆盖（默认配置目录名为 `.pi`）：
 
 ```text
 <project>/.pi/pi-time-context.json
 ```
+
+扩展遵循 Pi 的项目信任状态：项目未受信任时不会读取项目配置，只使用全局配置和默认值。项目配置目录通过 Pi 的 `CONFIG_DIR_NAME` 解析，兼容使用其他配置目录名的发行版。
 
 示例：
 
@@ -89,7 +91,7 @@ elapsed_since_last_activity: 2小时15分钟
 - `local` 在创建锚点时解析为具体 IANA 时区。
 - `showInjectedTime` 默认为 `false`；设为 `true` 后，每次实际注入都会在前端显示一次通知，但仍不会修改聊天消息正文。修改后执行 `/reload` 即可对当前会话生效。
 - 策略随会话锚点冻结；修改配置只影响尚未创建锚点的会话。
-- 非法配置会告警并回退到上一层有效值或默认值，不阻止扩展启动。
+- 非法字段和未知字段会告警；非法值回退到上一层有效值或默认值，不阻止扩展启动。
 
 ## 持久化与隐私
 
@@ -125,7 +127,5 @@ pi-time-context/carrier-decision
 
 ```bash
 npm install --ignore-scripts
-npm run check
-npm test
-npm run pack:check
+npm run validate
 ```

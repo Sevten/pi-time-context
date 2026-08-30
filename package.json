@@ -15,7 +15,8 @@
   "files": [
     "src",
     "README.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "pi": {
     "extensions": [
@@ -25,7 +26,8 @@
   "scripts": {
     "check": "tsc --noEmit",
     "test": "vitest run",
-    "pack:check": "npm pack --dry-run"
+    "pack:check": "npm pack --dry-run",
+    "validate": "npm run check && npm test && npm run pack:check"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"
