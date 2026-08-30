@@ -48,7 +48,7 @@ function hasAssistantContent(message: AgentMessage): boolean {
 export class ActivityTracker {
 	private readonly clock: Clock;
 	private readonly warn?: WarningSink;
-	private readonly requestedAtQueue: number[] = [];
+	private pendingRequestedAtMs?: number;
 	private readonly users: UserCapture[] = [];
 	private readonly assistants: AssistantCapture[] = [];
 	private readonly tools = new Map<string, ToolCapture>();
@@ -60,7 +60,7 @@ export class ActivityTracker {
 	}
 
 	reset(): void {
-		this.requestedAtQueue.length = 0;
+		this.pendingRequestedAtMs = undefined;
 		this.users.length = 0;
 		this.assistants.length = 0;
 		this.tools.clear();
@@ -68,7 +68,16 @@ export class ActivityTracker {
 	}
 
 	noteContextRequest(requestedAtMs: number | undefined): void {
-		if (requestedAtMs !== undefined) this.requestedAtQueue.push(requestedAtMs);
+		// A failed or superseded provider call may not produce an assistant message.
+		// Keep only the request associated with the next assistant stream so stale
+		// timings cannot leak into a later turn.
+		this.pendingRequestedAtMs = requestedAtMs;
+	}
+
+	private takePendingRequestTime(): number | undefined {
+		const requestedAtMs = this.pendingRequestedAtMs;
+		this.pendingRequestedAtMs = undefined;
+		return requestedAtMs;
 	}
 
 	onMessageStart(message: AgentMessage): void {
@@ -77,7 +86,7 @@ export class ActivityTracker {
 		if (streamStartedAtMs === undefined) this.warn?.("Clock returned an invalid assistant stream start time");
 		this.activeAssistant = {
 			timestamp: message.timestamp,
-			requestedAtMs: this.requestedAtQueue.shift(),
+			requestedAtMs: this.takePendingRequestTime(),
 			streamStartedAtMs,
 		};
 	}
@@ -112,7 +121,7 @@ export class ActivityTracker {
 			} else {
 				capture = {
 					timestamp: message.timestamp,
-					requestedAtMs: this.requestedAtQueue.shift(),
+					requestedAtMs: this.takePendingRequestTime(),
 					streamStartedAtMs: completedAtMs,
 				};
 			}

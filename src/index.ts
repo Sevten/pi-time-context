@@ -57,6 +57,10 @@ export class TimeContextRuntime {
 	private state: RecoveredState = emptyState();
 	private activationCarrierIds = new Set<string>();
 	private baselinePending = false;
+	private refreshedEntryCount = -1;
+	private refreshedEntryTailId?: string;
+	private refreshedBranchCount = -1;
+	private refreshedBranchTailId?: string;
 
 	constructor(pi: ExtensionAPI, options: RuntimeOptions = {}) {
 		this.pi = pi;
@@ -78,12 +82,26 @@ export class TimeContextRuntime {
 		}
 	}
 
-	private refresh(ctx: ExtensionContext): void {
-		this.state = recoverState(
-			ctx.sessionManager.getEntries(),
-			ctx.sessionManager.getBranch(),
-			(message) => this.warn(message),
-		);
+	private refresh(ctx: ExtensionContext, force = false): void {
+		const entries = ctx.sessionManager.getEntries();
+		const branch = ctx.sessionManager.getBranch();
+		const entryTailId = entries.at(-1)?.id;
+		const branchTailId = branch.at(-1)?.id;
+		if (
+			!force &&
+			entries.length === this.refreshedEntryCount &&
+			entryTailId === this.refreshedEntryTailId &&
+			branch.length === this.refreshedBranchCount &&
+			branchTailId === this.refreshedBranchTailId
+		) {
+			return;
+		}
+
+		this.state = recoverState(entries, branch, (message) => this.warn(message));
+		this.refreshedEntryCount = entries.length;
+		this.refreshedEntryTailId = entryTailId;
+		this.refreshedBranchCount = branch.length;
+		this.refreshedBranchTailId = branchTailId;
 	}
 
 	private createAnchor(
@@ -135,7 +153,7 @@ export class TimeContextRuntime {
 				warn: (message) => this.warn(message),
 			});
 		}
-		this.refresh(ctx);
+		this.refresh(ctx, true);
 		const branch = ctx.sessionManager.getBranch();
 		this.activationCarrierIds = carrierEntryIds(branch);
 		const branchHasUser = branch.some(

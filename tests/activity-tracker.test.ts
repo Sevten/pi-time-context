@@ -41,6 +41,36 @@ describe("activity tracker", () => {
 		]);
 	});
 
+	it("replaces a superseded request time instead of leaking it into a later turn", () => {
+		const clock = new MutableClock(0);
+		const tracker = new ActivityTracker(clock);
+		const response = assistant(10, "done");
+
+		tracker.noteContextRequest(100);
+		tracker.noteContextRequest(200);
+		clock.value = 300;
+		tracker.onMessageStart(response);
+		clock.value = 400;
+		tracker.onMessageEnd(response);
+
+		const first = tracker.resolveActivities(
+			[messageEntry("assistant-entry", null, response)],
+			new Map(),
+		);
+		expect(first[0]).toMatchObject({ requestedAtMs: 200 });
+
+		const next = assistant(20, "next");
+		clock.value = 500;
+		tracker.onMessageStart(next);
+		clock.value = 600;
+		tracker.onMessageEnd(next);
+		const second = tracker.resolveActivities(
+			[messageEntry("next-entry", null, next)],
+			new Map(),
+		);
+		expect(second[0]).toMatchObject({ requestedAtMs: undefined });
+	});
+
 	it("pairs tool timings by toolCallId and keeps actual completion order", () => {
 		const clock = new MutableClock(100);
 		const tracker = new ActivityTracker(clock);
