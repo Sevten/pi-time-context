@@ -112,7 +112,7 @@ pi-time-context/carrier-decision
 - 不修改 system prompt。
 - 不回改历史 assistant。
 - 不修改 session 中的原始消息。
-- 只在 `context` 提供的出站消息副本末尾追加 text block。
+- 只在 `context` 提供的出站消息副本开头插入独立的时间 text block。
 - 已记录的 stamped/null 决策和显示时区不会因重试、重载或配置变化而重算。
 - 不在 assistant tool call 与 toolResult 之间插入额外消息。
 

@@ -356,8 +356,8 @@ function decideForCarrier(carrier: Carrier): CarrierDecision {
 
 使用 Pi `context` hook，对 `event.messages` 的深拷贝做非破坏性变换。
 
-- user carrier：在其出站 content 末尾追加一个 text block；
-- toolResult carrier：在其出站 content 末尾追加一个 text block；
+- user carrier：在其出站 content 开头插入一个独立的时间 text block；
+- toolResult carrier：在其出站 content 开头插入一个独立的时间 text block；
 - 不创建插在 assistant tool call 与 toolResult 之间的额外消息；
 - 不修改历史 assistant；
 - 不修改持久化原始消息；
@@ -365,7 +365,7 @@ function decideForCarrier(carrier: Carrier): CarrierDecision {
 
 ### 5.2 注入格式
 
-不使用 XML 标签、JSON、括号或额外的 metadata wrapper，只追加简单的 key-value 文本。
+不使用 XML 标签、JSON、括号或额外的 metadata wrapper，只注入简单的 key-value 文本。
 
 普通检查点只注入：
 
@@ -494,7 +494,7 @@ interface SessionAnchorV1 {
 4. handler 返回后，Pi 持久化原始 user message；
 5. 随后的首次 `context` hook 从内存/anchor 读取 `t0Ms`，定位刚持久化的首条 user entry；
 6. 为该 user 创建不可变的 stamped carrier decision，其中 `firstSentAtMs = t0Ms`；
-7. 仅在 `event.messages` 深拷贝中的该 user 末尾追加 `sent_at`，再把变换后的上下文交给模型。
+7. 仅在 `event.messages` 深拷贝中的该 user 开头插入独立的 `sent_at` text block，再把变换后的上下文交给模型。
 
 `t0Ms` 已能无损表示时间，因而不重复存储可由它派生的 `t0Iso`。正常新会话的 `origin` 为 `first_user_processed`。
 
@@ -653,10 +653,10 @@ Pi `0.80.3` 的扩展 `message_end` 事件不直接提供 session entry ID。
 
 兼容两种 user content：
 
-- 字符串 content：转换为 text content 数组，再追加时间字段；
-- text/image content 数组：保持现有块和顺序，在末尾追加 text block。
+- 字符串 content：转换为 text content 数组，再在开头插入时间 text block；
+- text/image content 数组：保持现有块和顺序，在开头插入时间 text block。
 
-toolResult 保持已有 text/image 内容不变，只在末尾追加时间字段。
+toolResult 保持已有 text/image 内容和顺序不变，只在开头插入时间 text block。
 
 不得原地修改 `event.messages` 中的共享对象；应复制目标 message 和 content 数组后返回。
 

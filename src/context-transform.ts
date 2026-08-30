@@ -6,16 +6,17 @@ import type {
 } from "./types.js";
 import { renderDecision } from "./renderer.js";
 
-export function appendStamp(message: AgentMessage, stampText: string): AgentMessage {
+export function prependStamp(message: AgentMessage, stampText: string): AgentMessage {
+	const stamp = { type: "text" as const, text: stampText };
 	if (message.role === "user") {
 		const content =
 			typeof message.content === "string"
 				? [{ type: "text" as const, text: message.content }]
 				: [...message.content];
-		return { ...message, content: [...content, { type: "text", text: stampText }] };
+		return { ...message, content: [stamp, ...content] };
 	}
 	if (message.role === "toolResult") {
-		return { ...message, content: [...message.content, { type: "text", text: stampText }] };
+		return { ...message, content: [stamp, ...message.content] };
 	}
 	return message;
 }
@@ -35,7 +36,7 @@ export function transformContextMessages(
 		if (!rendered) continue;
 		const message = next[association.messageIndex];
 		if (!message) continue;
-		next[association.messageIndex] = appendStamp(message, rendered);
+		next[association.messageIndex] = prependStamp(message, rendered);
 		changed = true;
 	}
 	return changed ? next : [...messages];
