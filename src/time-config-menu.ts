@@ -13,7 +13,6 @@ export interface MenuCommitValue {
 
 export interface MenuDeps {
 	loadConfig(): TimeContextConfig;
-	showReport(): string;
 	commit(
 		action: MenuKind | "every",
 		scope: "project" | "global",
@@ -21,26 +20,24 @@ export interface MenuDeps {
 	): { summary?: string; error?: string };
 }
 
-type State = "main" | "interval" | "threshold" | "tz" | "layer" | "input" | "show";
+type State = "main" | "value" | "layer";
 
-const MAIN_OPTIONS = ["interval", "threshold", "timeZone", "show", "exit"] as const;
+const MAIN_OPTIONS = [
+	"Checkpoint interval",
+	"Previous-activity gap",
+	"Time zone",
+	"Exit",
+] as const;
 const INTERVAL_PRESETS = [5, 10, 15, 30, 60, 120];
 const TZ_PRESETS = ["local", "UTC"];
-const CUSTOM = "Custom…";
+const CUSTOM = "Custom:";
 const EVERY = "Every message";
+const LAYER_OPTIONS = ["Project", "Global"] as const;
 
-function valueOptions(kind: "interval" | "threshold"): string[] {
-	const presets = INTERVAL_PRESETS.map((minutes) => `${minutes} min`);
-	return kind === "interval" ? [EVERY, ...presets, CUSTOM] : [...presets, CUSTOM];
-}
-
-const TITLES: Record<Exclude<State, "input">, string> = {
-	main: "pi-time-context",
-	interval: "Checkpoint interval",
-	threshold: "Previous-activity threshold",
-	tz: "Time zone",
-	layer: "Config layer",
-	show: "Report (press any key to go back)",
+const SUBTITLES: Record<MenuKind, string> = {
+	interval: "Checkpoint interval — pick a value",
+	threshold: "Previous-activity gap — pick a value",
+	tz: "Time zone — pick a value",
 };
 
 function truncate(line: string, width: number): string {
@@ -57,9 +54,11 @@ export class TimeConfigMenuComponent {
 	private readonly deps: MenuDeps;
 	private readonly close: () => void;
 	private state: State = "main";
+	private kind: MenuKind = "interval";
 	private selectedIndex = 0;
-	private pendingKind: MenuKind = "interval";
 	private pendingValue: MenuCommitValue = {};
+	// Inline editing of the "Custom:" row, or of the full-screen input state.
+	private editing = false;
 	private inputBuffer = "";
 	private status?: string;
 	private config: TimeContextConfig;
@@ -74,49 +73,61 @@ export class TimeConfigMenuComponent {
 		// no cached state; re-render recomputes everything
 	}
 
+	private valueOptions(): string[] {
+		if (this.kind === "tz") return [...TZ_PRESETS, CUSTOM];
+		const presets = INTERVAL_PRESETS.map((minutes) => `${minutes} min`);
+		return this.kind === "interval" ? [EVERY, ...presets, CUSTOM] : [...presets, CUSTOM];
+	}
+
 	private options(): readonly string[] {
 		switch (this.state) {
 			case "main":
 				return MAIN_OPTIONS;
-			case "interval":
-			case "threshold":
-				return valueOptions(this.state);
-			case "tz":
-				return [...TZ_PRESETS, CUSTOM];
+			case "value":
+				return this.valueOptions();
 			case "layer":
-				return ["Project", "Global"];
+				return LAYER_OPTIONS;
 			default:
 				return [];
 		}
 	}
 
-	private summaryLine(): string {
-		const interval = this.config.stampEveryMessage
-			? "every message"
-			: `${this.config.checkpointIntervalMinutes} min`;
-		return `interval: ${interval} · threshold: ${this.config.previousActivityThresholdMinutes} min · tz: ${this.config.timeZone}`;
+	private summaryLines(): string[] {
+		const tz = resolveTimeZone(this.config.timeZone) ?? this.config.timeZone;
+		return [
+			this.config.stampEveryMessage
+				? "Timestamps: added to every message"
+				: `Timestamps: added after each ${this.config.checkpointIntervalMinutes} min checkpoint`,
+			`Idle gap shown after ${this.config.previousActivityThresholdMinutes} min without activity`,
+			`Times shown in ${tz}`,
+		];
 	}
 
 	private hintLine(): string {
-		if (this.state === "input") return "enter confirm · esc cancel";
-		if (this.state === "show") return "any key back";
+		if (this.editing) return "enter confirm · esc stop editing · ↑↓ move";
 		return "↑↓ move · enter select · 1-9 quick pick · esc back";
 	}
 
 	render(width: number): string[] {
 		const border = "─".repeat(Math.max(1, width));
 		const lines: string[] = [border, ""];
-		if (this.state === "input") {
-			lines.push(truncate(`${TITLES[this.pendingKind]} — custom value`, width));
-			lines.push("", `> ${this.inputBuffer}_`);
-		} else {
-			lines.push(truncate(TITLES[this.state], width));
-			if (this.state === "main") lines.push(truncate(this.summaryLine(), width));
+		{
+			if (this.state === "main") {
+				for (const line of this.summaryLines()) lines.push(truncate(line, width));
+				lines.push("");
+			} else if (this.state === "value") {
+				lines.push(truncate(SUBTITLES[this.kind], width));
+			}
 			if (this.status) lines.push(truncate(this.status, width));
 			lines.push("");
-			for (let i = 0; i < this.options().length; i++) {
-				const option = this.options()[i];
-				lines.push(i === this.selectedIndex ? `→ ${option}` : `  ${option}`);
+			const options = this.options();
+			for (let i = 0; i < options.length; i++) {
+				const selected = i === this.selectedIndex;
+				let label = options[i];
+				if (this.state === "value" && label === CUSTOM && (selected || this.inputBuffer)) {
+					label = `${CUSTOM} ${this.editing ? `${this.inputBuffer}_` : this.inputBuffer || "…"}`;
+				}
+				lines.push(selected ? `→ ${label}` : `  ${label}`);
 			}
 		}
 		lines.push("", truncate(this.hintLine(), width), "", border);
@@ -126,10 +137,12 @@ export class TimeConfigMenuComponent {
 	private move(delta: number): void {
 		const count = this.options().length;
 		this.selectedIndex = Math.min(count - 1, Math.max(0, this.selectedIndex + delta));
+		this.editing = this.state === "value" && this.options()[this.selectedIndex] === CUSTOM;
+		if (this.editing) this.inputBuffer = "";
 	}
 
 	private commitWith(scope: "project" | "global"): void {
-		const action = this.pendingKind === "tz" ? "tz" : this.pendingValue.every ? "every" : this.pendingKind;
+		const action = this.pendingValue.every ? "every" : this.kind;
 		const result = this.deps.commit(action, scope, this.pendingValue);
 		this.status = result.error ?? `✓ ${result.summary ?? "done"}`;
 		this.config = this.deps.loadConfig();
@@ -138,76 +151,48 @@ export class TimeConfigMenuComponent {
 	}
 
 	private confirmValue(choice: string): void {
-		if (this.state === "interval" || this.state === "threshold") {
-			if (choice === EVERY) {
-				this.pendingValue = { every: true };
-			} else if (choice !== CUSTOM) {
-				const minutes = INTERVAL_PRESETS[this.selectedIndex - (this.state === "interval" ? 1 : 0)];
-				this.pendingValue = { minutes };
-			} else {
-				this.openInput("minutes");
-				return;
-			}
-		} else if (this.state === "tz") {
-			if (choice === CUSTOM) {
-				this.openInput("tz");
-				return;
-			}
+		if (this.kind === "tz") {
+			if (choice === CUSTOM) return; // handled via inline editing
 			this.pendingValue = { timeZone: choice };
+		} else if (choice === EVERY) {
+			this.pendingValue = { every: true };
+		} else if (choice === CUSTOM) {
+			return; // handled via inline editing
+		} else {
+			const offset = this.kind === "interval" ? 1 : 0;
+			this.pendingValue = { minutes: INTERVAL_PRESETS[this.selectedIndex - offset] };
 		}
 		this.state = "layer";
 		this.selectedIndex = 0;
 	}
 
-	private openInput(mode: "minutes" | "tz"): void {
-		this.state = "input";
-		this.pendingInputMode = mode;
-		this.inputBuffer = "";
+	private confirmInput(): void {
+		const raw = this.inputBuffer.trim();
+		if (this.kind === "tz") {
+			if (!resolveTimeZone(raw)) {
+				this.status = `Unrecognized time zone "${raw}" (IANA name, local, or UTC)`;
+				return;
+			}
+			this.pendingValue = { timeZone: raw };
+		} else {
+			const minutes = parseIntervalValue(raw);
+			if (minutes === undefined) {
+				this.status = "Minutes must be an integer between 1 and 10080";
+				return;
+			}
+			this.pendingValue = { minutes };
+		}
+		this.state = "layer";
+		this.selectedIndex = 0;
 	}
 
-	private pendingInputMode: "minutes" | "tz" = "minutes";
-
 	handleInput(data: string): void {
-		if (this.state === "show") {
-			this.state = "main";
-			this.selectedIndex = 0;
-			return;
-		}
-		if (this.state === "input") {
-			if (data === "\x1b") {
-				this.state = this.pendingKind;
-				this.selectedIndex = 0;
-				return;
-			}
-			if (data === "\r" || data === "\n") {
-				if (this.pendingInputMode === "minutes") {
-					const minutes = parseIntervalValue(this.inputBuffer.trim());
-					if (minutes === undefined) {
-						this.status = "Interval must be an integer between 1 and 10080 minutes";
-						return;
-					}
-					this.pendingValue = { minutes };
-				} else {
-					const timeZone = this.inputBuffer.trim();
-					if (!resolveTimeZone(timeZone)) {
-						this.status = `Unrecognized time zone "${timeZone}"`;
-						return;
-					}
-					this.pendingValue = { timeZone };
-				}
-				this.state = "layer";
-				this.selectedIndex = 0;
-				return;
-			}
-			if (data === "\x7f" || data === "\b") {
-				this.inputBuffer = this.inputBuffer.slice(0, -1);
-				return;
-			}
-			if (data.length === 1 && data >= " ") this.inputBuffer += data;
-			return;
-		}
-
 		if (data === "\x1b") {
+			if (this.editing) {
+				this.editing = false;
+				this.inputBuffer = "";
+				return;
+			}
 			if (this.state === "main") {
 				this.close();
 				return;
@@ -216,6 +201,30 @@ export class TimeConfigMenuComponent {
 			this.selectedIndex = 0;
 			return;
 		}
+
+		// Inline editing of the Custom row in the value list.
+		if (this.state === "value" && this.editing) {
+			if (data === "\r" || data === "\n") {
+				this.confirmInput();
+				return;
+			}
+			if (data === "\x7f" || data === "\b") {
+				this.inputBuffer = this.inputBuffer.slice(0, -1);
+				return;
+			}
+			if (data === "\x1b[A" || data === "\x1bOA" || data === "k" || data === "\x1b[B" || data === "\x1bOB" || data === "j") {
+				this.editing = false;
+				this.inputBuffer = "";
+				this.move(data.includes("[A") || data === "\x1bOA" || data === "k" ? -1 : 1);
+				return;
+			}
+			if (data.length === 1 && data >= " ") {
+				this.inputBuffer += data;
+				return;
+			}
+			return;
+		}
+
 		if (data === "\x1b[A" || data === "\x1bOA" || data === "k") {
 			this.move(-1);
 			return;
@@ -241,19 +250,23 @@ export class TimeConfigMenuComponent {
 		const choice = this.options()[this.selectedIndex];
 		if (choice === undefined) return;
 		if (this.state === "main") {
-			if (choice === "interval" || choice === "threshold" || choice === "timeZone") {
-				this.pendingKind = choice === "timeZone" ? "tz" : choice;
-				this.pendingValue = {};
-				this.state = this.pendingKind;
-				this.selectedIndex = 0;
-			} else if (choice === "show") {
-				this.state = "show";
-			} else {
+			if (choice === "Exit") {
 				this.close();
+				return;
 			}
+			this.kind = choice === "Checkpoint interval" ? "interval" : choice === "Time zone" ? "tz" : "threshold";
+			this.pendingValue = {};
+			this.state = "value";
+			this.selectedIndex = 0;
+			this.editing = false;
 			return;
 		}
-		if (this.state === "interval" || this.state === "threshold" || this.state === "tz") {
+		if (this.state === "value") {
+			if (choice === CUSTOM) {
+				this.editing = true;
+				this.inputBuffer = "";
+				return;
+			}
 			this.confirmValue(choice);
 			return;
 		}

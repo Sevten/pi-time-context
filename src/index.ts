@@ -465,18 +465,6 @@ export class TimeContextRuntime {
 		});
 		await runTimeConfigMenu(ctx, {
 			loadConfig: () => this.loadCurrentConfig(ctx),
-			showReport: () => {
-				const nowMs = readClock(this.clock);
-				if (nowMs === undefined || !this.state.anchor) {
-					return buildInactiveShowReport(() => this.loadCurrentConfig(ctx));
-				}
-				return buildShowReport({
-					anchor: this.state.anchor,
-					revisions: this.state.revisions,
-					decisions: [...this.state.decisionsByCarrierId.values()],
-					nowMs,
-				});
-			},
 			commit: (action, scope, value) => {
 				const effective = this.currentEffectivePolicy();
 				const config = this.loadCurrentConfig(ctx);
