@@ -150,7 +150,7 @@ export function buildShowReport(info: TimeDisplayInfo): string {
 			const elapsed = decision.stamp?.elapsedMinutes;
 			lines.push(
 				`  ${formatLocalMinute(decision.firstSentAtMs, revision.timeZone)}${
-					elapsed !== undefined ? ` · idle for ${elapsed} minutes` : ""
+					elapsed !== undefined ? ` · user idle for ${elapsed} minutes` : ""
 				}`,
 			);
 		}

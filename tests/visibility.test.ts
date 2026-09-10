@@ -29,6 +29,6 @@ describe("decisionDisplayText", () => {
 	it("omits the elapsed segment when absent", () => {
 		const text = decisionDisplayText(decision({ renderVersion: 1 }))??"";
 		expect(text).toContain("sent_at");
-		expect(text).not.toContain("Idle for");
+		expect(text).not.toContain("User idle for");
 	});
 });

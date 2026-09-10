@@ -8,7 +8,7 @@ A model may receive context like this:
 
 ```text
 sent_at: 2026-08-22 14:15 +08:00
-elapsed_since_last_activity: 2小时15分钟
+user_idle_for: 2h15m
 
 Your original message or tool result...
 ```
@@ -83,10 +83,10 @@ When a checkpoint is due, the extension compares the message's send time with th
 
 ```text
 sent_at: 2026-08-22 14:15 +08:00
-elapsed_since_last_activity: 2小时15分钟
+user_idle_for: 2h15m
 ```
 
-Elapsed durations are rounded to minutes. The current renderer uses the compact Chinese units `小时` (hours) and `分钟` (minutes).
+Idle durations are rounded to minutes and rendered in a compact form (`45m`, `3h`, `2h15m`). The timer starts when the previous assistant or tool activity completes and stops when the user sends the next message.
 
 ### Injection location
 
@@ -110,7 +110,7 @@ The extension works without a configuration file. Its defaults are:
 | Option | Default | Description |
 | --- | ---: | --- |
 | `checkpointIntervalMinutes` | `30` | Minutes between timestamp checkpoints. |
-| `previousActivityThresholdMinutes` | `30` | Minimum activity gap before adding `elapsed_since_last_activity`. The comparison is strictly greater than this value. |
+| `previousActivityThresholdMinutes` | `30` | Minimum activity gap before adding `user_idle_for`. The comparison is strictly greater than this value. |
 | `timeZone` | `"local"` | Time zone used to render `sent_at`. |
 | `stampEveryMessage` | `false` | Stamp every outbound user and tool-result message instead of using checkpoint intervals. |
 

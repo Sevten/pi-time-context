@@ -16,7 +16,7 @@ export function renderDecision(decision: CarrierDecisionV1, policy: TimePolicyV1
 
 	const lines = [`sent_at: ${formatLocalMinute(decision.firstSentAtMs, policy.timeZone)}`];
 	if (decision.stamp.elapsedMinutes !== undefined) {
-		lines.push(`elapsed_since_last_activity: ${formatElapsedMinutes(decision.stamp.elapsedMinutes)}`);
+		lines.push(`user_idle_for: ${formatElapsedMinutes(decision.stamp.elapsedMinutes)}`);
 	}
 	return lines.join("\n");
 }

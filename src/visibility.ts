@@ -10,7 +10,7 @@ export function decisionDisplayText(decision: CarrierDecisionV1): string | undef
 	if (!decision.stamp) return undefined;
 	const parts = [`sent_at ${formatLocalMinute(decision.firstSentAtMs, resolveTimeZone("local") ?? "UTC")}`];
 	if (decision.stamp.elapsedMinutes !== undefined) {
-		parts.push(`Idle for ${formatElapsedMinutes(decision.stamp.elapsedMinutes)}`);
+		parts.push(`User idle for ${formatElapsedMinutes(decision.stamp.elapsedMinutes)}`);
 	}
 	return parts.join(" · ");
 }
