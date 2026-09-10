@@ -11,6 +11,11 @@ export interface MenuCommitValue {
 	every?: boolean;
 }
 
+export interface MenuTheme {
+	fg(color: "dim" | "muted" | "accent" | "text", text: string): string;
+	bold(text: string): string;
+}
+
 export interface MenuDeps {
 	loadConfig(): TimeContextConfig;
 	commit(
@@ -22,27 +27,44 @@ export interface MenuDeps {
 
 type State = "main" | "value" | "layer";
 
-const MAIN_OPTIONS = [
-	"Checkpoint interval",
-	"Previous-activity gap",
-	"Time zone",
-	"Exit",
-] as const;
+interface MainItem {
+	label: string;
+	value(): string;
+}
+
+const MAIN_ITEMS: readonly MainItem[] = [
+	{ label: "Timestamp interval", value: () => "" },
+	{ label: "Idle gap threshold", value: () => "" },
+	{ label: "Time zone", value: () => "" },
+];
+
+const MAIN_KEYS = ["interval", "threshold", "tz"] as const;
+
 const INTERVAL_PRESETS = [5, 10, 15, 30, 60, 120];
 const TZ_PRESETS = ["local", "UTC"];
-const CUSTOM = "Custom:";
+const CUSTOM = "Custom";
 const EVERY = "Every message";
 const LAYER_OPTIONS = ["Project", "Global"] as const;
 
 const SUBTITLES: Record<MenuKind, string> = {
-	interval: "Checkpoint interval — pick a value",
-	threshold: "Previous-activity gap — pick a value",
-	tz: "Time zone — pick a value",
+	interval: "Timestamp interval",
+	threshold: "Idle gap threshold",
+	tz: "Time zone",
 };
 
-function truncate(line: string, width: number): string {
-	if (line.length <= width) return line;
-	return `${line.slice(0, Math.max(1, width - 1))}…`;
+function stripAnsi(line: string): string {
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape stripping
+	return line.replace(/\x1b\[[0-9;]*m/g, "");
+}
+
+function visibleTruncate(line: string, width: number): string {
+	if (stripAnsi(line).length <= width) return line;
+	const plain = stripAnsi(line);
+	return `${plain.slice(0, Math.max(1, width - 1))}…`;
+}
+
+function keyHint(theme: MenuTheme, key: string, description: string): string {
+	return theme.fg("dim", key) + theme.fg("muted", ` ${description}`);
 }
 
 /**
@@ -53,24 +75,39 @@ function truncate(line: string, width: number): string {
 export class TimeConfigMenuComponent {
 	private readonly deps: MenuDeps;
 	private readonly close: () => void;
+	private readonly theme: MenuTheme;
 	private state: State = "main";
 	private kind: MenuKind = "interval";
 	private selectedIndex = 0;
 	private pendingValue: MenuCommitValue = {};
-	// Inline editing of the "Custom:" row, or of the full-screen input state.
+	// Inline editing of the "Custom" row.
 	private editing = false;
 	private inputBuffer = "";
 	private status?: string;
 	private config: TimeContextConfig;
 
-	constructor(deps: MenuDeps, close: () => void) {
+	constructor(deps: MenuDeps, close: () => void, theme: MenuTheme) {
 		this.deps = deps;
 		this.close = close;
+		this.theme = theme;
 		this.config = deps.loadConfig();
 	}
 
 	invalidate(): void {
 		// no cached state; re-render recomputes everything
+	}
+
+	private intervalValue(): string {
+		return this.config.stampEveryMessage ? "every message" : `every ${this.config.checkpointIntervalMinutes} min`;
+	}
+
+	private mainItems(): { label: string; value: string }[] {
+		const tz = resolveTimeZone(this.config.timeZone) ?? this.config.timeZone;
+		return [
+			{ label: "Timestamp interval", value: this.intervalValue() },
+			{ label: "Idle gap threshold", value: `${this.config.previousActivityThresholdMinutes} min` },
+			{ label: "Time zone", value: tz },
+		];
 	}
 
 	private valueOptions(): string[] {
@@ -81,56 +118,62 @@ export class TimeConfigMenuComponent {
 
 	private options(): readonly string[] {
 		switch (this.state) {
-			case "main":
-				return MAIN_OPTIONS;
 			case "value":
 				return this.valueOptions();
 			case "layer":
 				return LAYER_OPTIONS;
 			default:
-				return [];
+				return MAIN_ITEMS.map((item) => item.label);
 		}
 	}
 
-	private summaryLines(): string[] {
-		const tz = resolveTimeZone(this.config.timeZone) ?? this.config.timeZone;
-		return [
-			this.config.stampEveryMessage
-				? "Timestamps: added to every message"
-				: `Timestamps: added after each ${this.config.checkpointIntervalMinutes} min checkpoint`,
-			`Idle gap shown after ${this.config.previousActivityThresholdMinutes} min without activity`,
-			`Times shown in ${tz}`,
-		];
-	}
-
 	private hintLine(): string {
-		if (this.editing) return "enter confirm · esc stop editing · ↑↓ move";
-		return "↑↓ move · enter select · 1-9 quick pick · esc back";
+		const t = this.theme;
+		if (this.editing) {
+			return keyHint(t, "enter", "confirm") + t.fg("muted", "  ·  ") + keyHint(t, "esc", "exit menu");
+		}
+		return (
+			keyHint(t, "enter", "select") +
+			t.fg("muted", "  ·  ") +
+			keyHint(t, "1-9", "quick pick") +
+			t.fg("muted", "  ·  ") +
+			keyHint(t, "esc", "back")
+		);
 	}
 
 	render(width: number): string[] {
-		const border = "─".repeat(Math.max(1, width));
+		const border = this.theme.fg("dim", "─".repeat(Math.max(1, width)));
 		const lines: string[] = [border, ""];
-		{
-			if (this.state === "main") {
-				for (const line of this.summaryLines()) lines.push(truncate(line, width));
-				lines.push("");
-			} else if (this.state === "value") {
-				lines.push(truncate(SUBTITLES[this.kind], width));
+		if (this.state === "main") {
+			const items = this.mainItems();
+			const labelWidth = Math.max(...items.map((item) => item.label.length)) + 2;
+			for (let i = 0; i < items.length; i++) {
+				const selected = i === this.selectedIndex;
+				const marker = selected ? this.theme.fg("accent", "→ ") : "  ";
+				const label = (items[i].label + " ".repeat(labelWidth)).slice(0, labelWidth);
+				const labelText = selected ? this.theme.fg("accent", label) : this.theme.fg("text", label);
+				lines.push(marker + labelText + this.theme.fg("muted", items[i].value));
 			}
-			if (this.status) lines.push(truncate(this.status, width));
+			lines.push("");
+		} else {
+			if (this.state === "value") {
+				lines.push(this.theme.bold(this.theme.fg("accent", SUBTITLES[this.kind])));
+			}
+			if (this.status) lines.push(this.theme.fg("muted", visibleTruncate(this.status, width)));
 			lines.push("");
 			const options = this.options();
 			for (let i = 0; i < options.length; i++) {
 				const selected = i === this.selectedIndex;
+				const marker = selected ? this.theme.fg("accent", "→ ") : "  ";
 				let label = options[i];
-				if (this.state === "value" && label === CUSTOM && (selected || this.inputBuffer)) {
-					label = `${CUSTOM} ${this.editing ? `${this.inputBuffer}_` : this.inputBuffer || "…"}`;
+				if (this.state === "value" && label === CUSTOM && selected) {
+					label = this.editing ? `${CUSTOM}: ${this.inputBuffer}_` : `${CUSTOM}:`;
 				}
-				lines.push(selected ? `→ ${label}` : `  ${label}`);
+				const labelText = selected ? this.theme.fg("accent", label) : this.theme.fg("text", label);
+				lines.push(marker + labelText);
 			}
 		}
-		lines.push("", truncate(this.hintLine(), width), "", border);
+		lines.push("", visibleTruncate(this.hintLine(), width), "", border);
 		return lines;
 	}
 
@@ -187,13 +230,14 @@ export class TimeConfigMenuComponent {
 	}
 
 	handleInput(data: string): void {
+		// pi binds ctrl+c to tui.select.cancel alongside escape.
+		if (data === "\x03") {
+			this.close();
+			return;
+		}
 		if (data === "\x1b") {
-			if (this.editing) {
-				this.editing = false;
-				this.inputBuffer = "";
-				return;
-			}
-			if (this.state === "main") {
+			// A single esc exits the menu, even while editing the Custom row.
+			if (this.editing || this.state === "main") {
 				this.close();
 				return;
 			}
@@ -250,11 +294,8 @@ export class TimeConfigMenuComponent {
 		const choice = this.options()[this.selectedIndex];
 		if (choice === undefined) return;
 		if (this.state === "main") {
-			if (choice === "Exit") {
-				this.close();
-				return;
-			}
-			this.kind = choice === "Checkpoint interval" ? "interval" : choice === "Time zone" ? "tz" : "threshold";
+			const item = MAIN_ITEMS[this.selectedIndex];
+			this.kind = MAIN_KEYS[MAIN_ITEMS.indexOf(item)];
 			this.pendingValue = {};
 			this.state = "value";
 			this.selectedIndex = 0;
@@ -277,5 +318,8 @@ export class TimeConfigMenuComponent {
 }
 
 export function runTimeConfigMenu(ctx: ExtensionCommandContext, deps: MenuDeps): Promise<void> {
-	return ctx.ui.custom<null>((_tui, _theme, _keybindings, done) => new TimeConfigMenuComponent(deps, () => done(null))).then(() => undefined);
+	return ctx.ui.custom<null>(
+		(_tui, theme, _keybindings, done) =>
+			new TimeConfigMenuComponent(deps, () => done(null), theme as unknown as MenuTheme),
+	).then(() => undefined);
 }
