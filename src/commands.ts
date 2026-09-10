@@ -27,7 +27,7 @@ export function globalConfigPath(options: { homeDirectory?: string } = {}): stri
 }
 
 export interface ParsedTimeConfigArgs {
-	action: "show" | "interval" | "threshold" | "tz" | "every";
+	action: "show" | "interval" | "threshold" | "tz";
 	value?: string;
 }
 
@@ -40,8 +40,7 @@ export const USAGE = [
 	"Usage:",
 	"  /time-config              Interactive configuration",
 	"  /time-config show         Show current config and recent timestamps",
-	"  /time-config interval <minutes>",
-	"  /time-config every        Toggle \"stamp every message\" mode",
+	"  /time-config interval <minutes|every>",
 	"  /time-config threshold <minutes>",
 	"  /time-config tz <IANA|local|UTC>",
 	"",
@@ -55,11 +54,13 @@ export function parseTimeConfigArgs(input: string): ParseResult {
 		return { error: `Unknown flag ${unknownFlags.join(" ")}\n\n${USAGE}` };
 	}
 	const action = (tokens[0] ?? "show") as ParsedTimeConfigArgs["action"];
+	if (tokens[0] === "every") {
+		return { error: "Unknown subcommand \"every\"; use /time-config interval every\n\n" + USAGE };
+	}
 	const value = tokens[1];
 	switch (action) {
 		case "show":
-		case "every":
-			if (value !== undefined) return { error: `${action} takes no arguments\n\n${USAGE}` };
+			if (value !== undefined) return { error: "show takes no arguments\n\n" + USAGE };
 			return { args: { action } };
 		case "interval":
 		case "threshold":

@@ -1,10 +1,8 @@
 # pi-time-context
 
-Deterministic, cache-stable wall-clock context for Pi conversations.
+A [Pi](https://github.com/earendil-works/pi) agent extension that gives conversations wall-clock context — sparse, stable, and quiet.
 
-`pi-time-context` is a Pi extension that gives language models an explicit sense of real-world time. It prepends a small timestamp block to selected outbound user and tool-result messages without changing the system prompt or the messages stored in the Pi session.
-
-A model may receive context like this:
+`pi-time-context` attaches a small timestamp block to outbound user messages and tool results at intervals — just enough for the model to always know the real time, without stamping every message:
 
 ```text
 sent_at: 2026-08-22 14:15 +08:00
@@ -13,198 +11,57 @@ user_idle_for: 2h15m
 Your original message or tool result...
 ```
 
-The extension is designed for long-running, resumed, forked, and provider-retried conversations where timestamps must remain deterministic instead of changing whenever context is rebuilt.
+## How it works
 
-## Highlights
+When the first message of a session is sent, it receives a baseline stamp marking the session start. After that, a stamp is added only once a 10-minute window (configurable) has passed, attached to the next outbound user message or tool result.
 
-- **Real wall-clock context** — exposes an absolute local time with a numeric UTC offset.
-- **Deterministic replay** — freezes each timestamp decision before the message is first sent and reuses it on retries and reloads.
-- **Cache-friendly behavior** — timestamps are added at fixed checkpoints rather than to every message.
-- **Lifecycle-aware elapsed time** — can tell the model how long it has been since the previous assistant or tool activity completed.
-- **Session-safe injection** — modifies only the outbound context copy; persisted user, assistant, and tool-result messages remain untouched.
-- **Branch-aware recovery** — restores decisions across resume, reload, fork, clone, and tree navigation.
-- **Privacy-conscious persistence** — does not copy message bodies, tool arguments, or tool output into extension metadata.
-- **No background work** — starts no timers, polling loops, or model-callable tools.
-
-## Requirements
-
-- Node.js `>=22.19.0`
-- Built and tested against `@earendil-works/pi-coding-agent@0.80.3`
+- **Sparse by design** — a few well-placed stamps give the model a sense of real time without filling its context with timestamp noise; if you truly want a stamp on every message, one option turns it on.
+- **Idle-aware** — when the previous assistant or tool activity ended more than 30 minutes ago (configurable), the stamp also includes `user_idle_for`, telling the model the conversation has a gap.
+- **Deterministic** — each stamp is frozen the first time a message is sent. Retries, `/resume`, `/reload`, `/fork`, `/clone`, and `/tree` reproduce identical timestamps, and already-sent context never changes, keeping prompt caches warm.
+- **Visible, not intrusive** — the model sees the stamps; you see them too, as a dim one-line marker in the chat UI. Session data and the system prompt are never touched.
 
 ## Installation
-
-Install the package from npm:
 
 ```bash
 pi install npm:@sevten/pi-time-context
 ```
 
-Install it only for the current project:
+## Usage
 
-```bash
-pi install -l npm:@sevten/pi-time-context
-```
-
-To install a local checkout instead:
-
-```bash
-pi install /path/to/pi-time-context
-```
-
-Or enable a local checkout for a single run without installing it:
-
-```bash
-pi -e /path/to/pi-time-context
-```
-
-Pi discovers the extension through the `pi.extensions` entry in `package.json`. No command or prompt setup is required after installation.
-
-## How it works
-
-### Session anchor
-
-When Pi processes the first user message in a new session, the extension freezes a session anchor (`T0`). The outbound copy of that first message receives a baseline timestamp:
+Nothing to set up. In the chat UI, each stamped message shows a dim marker under it, for example:
 
 ```text
-sent_at: 2026-08-22 14:15 +08:00
+sent_at 14:15 +08:00 · User idle for 2h15m
 ```
 
-The internal name `T0` is never shown to the model.
+That marker mirrors exactly what the model received — nothing extra is written into the session file. After a compaction drops the session's early messages, a `session_started_at:` line is prepended to the summary so the model still knows when the session began.
 
-### Checkpoints
+### Configuring with `/time-config`
 
-By default, the next checkpoints are `T0 + 30m`, `T0 + 60m`, `T0 + 90m`, and so on. The extension does not wake up when a checkpoint passes. It checks the clock only when a new user message or tool result is about to be sent to the model.
+There are two ways to configure, both writing to the global config file (`~/.pi/agent/pi-time-context.json`) and taking effect right away — subsequent messages are stamped by the new settings, while already-stamped messages keep their original stamps.
 
-If one or more checkpoint intervals have passed, the next eligible message receives one timestamp block. Skipping several intervals does not produce several timestamps.
-
-### Elapsed activity
-
-When a checkpoint is due, the extension compares the message's send time with the completion time of the previous assistant or tool activity. If the gap is strictly greater than the configured threshold, it adds a second line:
+**Interactive menu** — run `/time-config` without arguments:
 
 ```text
-sent_at: 2026-08-22 14:15 +08:00
-user_idle_for: 2h15m
+  Stamp a timestamp every   10 min
+  Show idle gap after       30 min idle
+  Show times in             local
+
+  enter select  ·  esc back
 ```
 
-Idle durations are rounded to minutes and rendered in a compact form (`45m`, `3h`, `2h15m`). The timer starts when the previous assistant or tool activity completes and stops when the user sends the next message.
+- **Stamp a timestamp every** — presets (5, 10, 15, 30, 60, 120 min), `Every message`, or a custom value. Picking a concrete interval switches every-message mode off, and vice versa.
+- **Show idle gap after** — minimum idle gap before `user_idle_for` is added.
+- **Show times in** — `local`, `UTC`, or any IANA time zone (`Asia/Shanghai`); custom values are typed inline.
 
-### Injection location
-
-The timestamp is inserted as an independent text content block before the original content:
+**Text commands**:
 
 ```text
-[timestamp text block]
-[original text/image content blocks]
+/time-config show                     current config, next checkpoint, recent stamps
+/time-config interval <minutes|every>  set the interval, or "every" for every-message mode
+/time-config threshold <minutes>
+/time-config tz <IANA|local|UTC>
 ```
-
-This preserves the original content blocks and their order. The extension never adds a separate message between an assistant tool call and its tool result.
-
-### Compaction
-
-When compaction removes the session's first stamped message from the context, the model would otherwise lose the session start time. The extension detects a compaction summary at the head of the context and prepends a `session_started_at` line (rendered from the persisted session anchor) to the summary text on the outbound copy only. Messages after the summary continue to receive their normal `sent_at` stamps.
-
-## Configuration
-
-The extension works without a configuration file. Its defaults are:
-
-| Option | Default | Description |
-| --- | ---: | --- |
-| `checkpointIntervalMinutes` | `30` | Minutes between timestamp checkpoints. |
-| `previousActivityThresholdMinutes` | `30` | Minimum activity gap before adding `user_idle_for`. The comparison is strictly greater than this value. |
-| `timeZone` | `"local"` | Time zone used to render `sent_at`. |
-| `stampEveryMessage` | `false` | Stamp every outbound user and tool-result message instead of using checkpoint intervals. |
-
-Create a configuration file at:
-
-```text
-~/.pi/agent/pi-time-context.json
-```
-
-Example:
-
-```json
-{
-  "checkpointIntervalMinutes": 30,
-  "previousActivityThresholdMinutes": 30,
-  "timeZone": "local",
-  "stampEveryMessage": false
-}
-```
-
-### The `/time-config` command
-
-Inside Pi you can inspect and change the configuration without leaving the session:
-
-```text
-/time-config                          show the interactive menu
-/time-config show                     current effective config and recent stamps
-/time-config interval <minutes>       change the checkpoint interval
-/time-config every                    toggle stamping every message
-/time-config threshold <minutes>      change the previous-activity threshold
-/time-config tz <IANA|local|UTC>      change the render time zone
-```
-
-- Changes are written to the global config file.
-- Every successful change also records an in-session policy revision, so it takes effect immediately for messages that have not been sent yet. Previously stamped messages are never re-rendered.
-- Switching intervals re-buckets checkpoints from the session anchor (T0); the next stamp may therefore arrive sooner or later than the old phase implied.
-- While the extension is active, the footer status line at the bottom of the window shows the current time and the next checkpoint.
-- Stamped messages show a dim inline marker in the chat transcript (for example `sent_at 14:15 +08:00`), rendered from the persisted decision entries without touching session data.
-- Configuration files are only read when a session anchor is created; editing them mid-session does not affect the running session (use `/time-config` instead).
-
-### Configuration rules
-
-- Interval values must be finite numbers from `1` through `10080`.
-- `timeZone` accepts `"local"`, `"UTC"`, or an IANA time zone supported by the runtime, such as `"Asia/Shanghai"` or `"America/New_York"`.
-- `"local"` is resolved to a concrete IANA time zone when the session anchor is created.
-- The resolved policy is frozen with the session anchor. Configuration changes affect only sessions that have not created an anchor yet.
-- Invalid or unknown fields produce warnings and fall back to the defaults.
-
-## Deterministic sessions and retries
-
-Before an eligible message is first sent to the model, the extension persists either a stamped decision or an explicit no-stamp decision. Rebuilding context therefore cannot add a new timestamp to a message that was originally sent without one, and an existing timestamp cannot drift with the current clock or configuration.
-
-This behavior applies to provider retries and to session recovery through `/resume`, `/reload`, `/fork`, `/clone`, and `/tree`.
-
-For an existing session created before the extension was enabled:
-
-- historical messages are not modified or backfilled;
-- the first new eligible message establishes a migration anchor;
-- that message receives a normal `sent_at` value, not a false conversation-start marker.
-
-## Persistence and privacy
-
-The extension stores its state in three Pi custom-entry types that are excluded from model context:
-
-```text
-pi-time-context/session-anchor
-pi-time-context/activity-facts
-pi-time-context/carrier-decision
-```
-
-These records contain only the data required for deterministic recovery, including epoch timestamps, session-message entry IDs, tool-call IDs, error flags, the frozen policy, and rendering decisions.
-
-They do **not** duplicate:
-
-- user or assistant message bodies;
-- tool arguments;
-- tool output.
-
-Additional invariants:
-
-- the system prompt is never modified;
-- historical assistant messages are never annotated;
-- original session messages are never rewritten;
-- only outbound context copies receive timestamp blocks;
-- a system-clock rollback still permits an absolute timestamp, but suppresses a negative elapsed duration.
-
-## Limitations
-
-- This extension provides context, not a model-callable clock tool.
-- It does not wake the agent, schedule work, or poll in the background.
-- It does not provide TUI timestamps, dashboards, or analytics.
-- It does not perform a separate calendar-day transition check because `sent_at` already includes the full date.
-- Cross-process replay requires a persistent Pi session file.
-- Elapsed-duration labels currently use Chinese hour/minute units.
 
 ## Development
 

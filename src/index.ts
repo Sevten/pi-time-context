@@ -372,19 +372,18 @@ export class TimeContextRuntime {
 	}
 
 	private computeChange(
-		action: "interval" | "threshold" | "tz" | "every",
+		action: "interval" | "threshold" | "tz",
 		currentConfig: TimeContextConfig,
 		value: { minutes?: number; timeZone?: string; every?: boolean },
 	): { patch: Partial<TimeContextConfig>; nextPolicy: TimePolicyV1; error?: string } {
 		const base = freezePolicy(currentConfig, (message) => this.warn(message));
-		if (action === "every") {
-			const enabled = value.every ?? !currentConfig.stampEveryMessage;
-			return { patch: { stampEveryMessage: enabled }, nextPolicy: { ...base, stampEveryMessage: enabled } };
-		}
 		if (action === "interval") {
+			if (value.every === true) {
+				return { patch: { stampEveryMessage: true }, nextPolicy: { ...base, stampEveryMessage: true } };
+			}
 			const minutes = value.minutes;
 			if (minutes === undefined || !isValidIntervalMinutes(minutes)) {
-				return { patch: {}, nextPolicy: base, error: "Interval must be an integer between 1 and 10080 minutes" };
+				return { patch: {}, nextPolicy: base, error: 'Interval must be an integer between 1 and 10080 minutes, or "every"' };
 			}
 			return {
 				patch: { checkpointIntervalMinutes: minutes, stampEveryMessage: false },
@@ -412,7 +411,7 @@ export class TimeContextRuntime {
 	private commitChange(
 		effective: { anchor: SessionAnchorV1; policy: TimePolicyV1 } | undefined,
 		change: { patch: Partial<TimeContextConfig>; nextPolicy: TimePolicyV1 },
-		action: "interval" | "threshold" | "tz" | "every",
+		action: "interval" | "threshold" | "tz",
 	): { summary: string } | { error: string } {
 		const targetPath = globalConfigPath({ homeDirectory: this.homeDirectory });
 		try {
@@ -423,13 +422,11 @@ export class TimeContextRuntime {
 		if (effective) this.appendRevision(change.nextPolicy);
 		const policy = change.nextPolicy;
 		const summary =
-			action === "every"
-				? `Stamp every message: ${policy.stampEveryMessage ? "on" : "off"}`
-				: action === "tz"
-					? `Time zone: ${policy.timeZone}`
-					: action === "interval"
-						? `Checkpoint interval: ${policy.stampEveryMessage ? "every message" : `${Math.round(policy.checkpointIntervalMs / 60_000)} minutes`}`
-						: `Previous-activity threshold: ${Math.round(policy.previousActivityThresholdMs / 60_000)} minutes`;
+			action === "tz"
+				? `Time zone: ${policy.timeZone}`
+				: action === "interval"
+					? `Checkpoint interval: ${policy.stampEveryMessage ? "every message" : `${Math.round(policy.checkpointIntervalMs / 60_000)} minutes`}`
+					: `Previous-activity threshold: ${Math.round(policy.previousActivityThresholdMs / 60_000)} minutes`;
 		const scopeNote = effective
 			? "written to the global config; applies to subsequent messages"
 			: "written to the global config; takes effect when the session activates (first user message)";
@@ -494,12 +491,13 @@ export class TimeContextRuntime {
 		const effective = this.currentEffectivePolicy();
 		const currentConfig = this.loadCurrentConfig(ctx);
 
+		const raw = parsed.args.value ?? "";
 		const value =
-			action === "every"
-				? {}
-				: action === "tz"
-					? { timeZone: parsed.args.value ?? "" }
-					: { minutes: parseIntervalValue(parsed.args.value ?? "") };
+			action === "tz"
+				? { timeZone: raw }
+				: action === "interval" && raw.toLowerCase() === "every"
+					? { every: true as const }
+					: { minutes: parseIntervalValue(raw) };
 		const change = this.computeChange(action, currentConfig, value);
 		if (change.error) {
 			ctx.ui.notify(change.error, "error");

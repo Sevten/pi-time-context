@@ -20,7 +20,9 @@ describe("parseTimeConfigArgs", () => {
 		expect(parseTimeConfigArgs("interval 15")).toEqual({
 			args: { action: "interval", value: "15" },
 		});
-		expect(parseTimeConfigArgs("every")).toEqual({ args: { action: "every" } });
+		expect(parseTimeConfigArgs("interval every")).toEqual({
+			args: { action: "interval", value: "every" },
+		});
 		expect(parseTimeConfigArgs("tz Asia/Shanghai")).toEqual({
 			args: { action: "tz", value: "Asia/Shanghai" },
 		});
@@ -28,6 +30,7 @@ describe("parseTimeConfigArgs", () => {
 
 	it("rejects unknown actions, missing values, and unknown flags", () => {
 		expect(parseTimeConfigArgs("bogus").error).toContain("Unknown subcommand");
+		expect(parseTimeConfigArgs("every").error).toContain("interval every");
 		expect(parseTimeConfigArgs("interval").error).toContain("requires an argument");
 		expect(parseTimeConfigArgs("interval 15 -x").error).toContain("Unknown flag");
 		expect(parseTimeConfigArgs("show 3").error).toContain("takes no arguments");

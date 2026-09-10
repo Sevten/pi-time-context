@@ -18,7 +18,7 @@ export interface MenuTheme {
 
 export interface MenuDeps {
 	loadConfig(): TimeContextConfig;
-	commit(action: MenuKind | "every", value: MenuCommitValue): { summary?: string; error?: string };
+	commit(action: MenuKind, value: MenuCommitValue): { summary?: string; error?: string };
 }
 
 type State = "main" | "value";
@@ -165,8 +165,7 @@ export class TimeConfigMenuComponent {
 	}
 
 	private commitWith(): void {
-		const action = this.pendingValue.every ? "every" : this.kind;
-		const result = this.deps.commit(action, this.pendingValue);
+		const result = this.deps.commit(this.kind, this.pendingValue);
 		this.status = result.error ?? `✓ ${result.summary ?? "done"}`;
 		this.config = this.deps.loadConfig();
 		this.state = "main";

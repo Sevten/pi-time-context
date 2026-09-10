@@ -10,6 +10,8 @@
 ### Changed
 
 - Configuration is now global only (`~/.pi/agent/pi-time-context.json`); project-level config files, the `-g`/`--global` flag, and the config-layer picker in the interactive menu were removed.
+- Default checkpoint interval is now 10 minutes (was 30).
+- Merge `/time-config every` into `/time-config interval <minutes|every>`: one subcommand now controls both the interval and every-message mode, matching the interactive menu.
 
 ### Fixed
 
@@ -25,6 +27,7 @@
 
 ### Changed
 
+- Rewrite the README as a user-facing guide: motivation, what the model sees, UI walkthrough for `/time-config` and inline transcript markers, and trimmed implementation detail.
 - Resolve the project configuration directory through Pi's `CONFIG_DIR_NAME`.
 - Warn about unknown configuration fields and avoid redundant file existence checks.
 - Use portable local-install paths in the documentation.

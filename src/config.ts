@@ -21,7 +21,7 @@ export interface ConfigLoadOptions {
 }
 
 export const DEFAULT_CONFIG: Readonly<TimeContextConfig> = {
-	checkpointIntervalMinutes: 30,
+	checkpointIntervalMinutes: 10,
 	previousActivityThresholdMinutes: 30,
 	timeZone: "local",
 	stampEveryMessage: false,
