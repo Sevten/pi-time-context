@@ -7,7 +7,7 @@ import {
 	configPaths,
 	parseIntervalValue,
 	parseTimeConfigArgs,
-	widgetLines,
+	statusLine,
 	writeConfigLayer,
 } from "../src/commands.js";
 import { parsePolicyRevision } from "../src/persistence.js";
@@ -114,11 +114,12 @@ describe("buildShowReport and widgetLines", () => {
 		expect(report).toContain("每条消息都附着时间戳");
 	});
 
-	it("renders widget lines for both modes", () => {
-		const lines = widgetLines(T0 + 60_000, base, base.policy);
-		expect(lines[0]).toContain("现在");
-		expect(lines[1]).toContain("下次检查点");
-		const everyLines = widgetLines(T0 + 60_000, base, { ...base.policy, stampEveryMessage: true });
-		expect(everyLines[1]).toContain("每条消息");
+	it("renders the status line for both modes", () => {
+		const status = statusLine(T0 + 60_000, base, base.policy);
+		expect(status).not.toContain("⏱");
+		expect(status).toContain("下次检查点");
+		const everyStatus = statusLine(T0 + 60_000, base, { ...base.policy, stampEveryMessage: true });
+		expect(everyStatus).not.toContain("下次检查点");
+		expect(everyStatus).toMatch(/\d{2}:\d{2}$/);
 	});
 });

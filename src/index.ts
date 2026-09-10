@@ -19,7 +19,7 @@ import {
 	configPaths,
 	parseIntervalValue,
 	parseTimeConfigArgs,
-	widgetLines,
+	statusLine,
 	writeConfigLayer,
 } from "./commands.js";
 import { transformContextMessages } from "./context-transform.js";
@@ -343,9 +343,10 @@ export class TimeContextRuntime {
 		if (nowMs === undefined) return;
 		const policy = resolvePolicy(this.state.anchor, this.state.revisions, nowMs);
 		try {
-			ctx.ui.setWidget("pi-time-context", widgetLines(nowMs, this.state.anchor, policy));
+			// Current time lives in the footer status line (bottom of the window).
+			if (ctx.mode === "tui") ctx.ui.setStatus("pi-time-context", statusLine(nowMs, this.state.anchor, policy));
 		} catch {
-			// Widget display is best-effort; never break the caller.
+			// Status display is best-effort; never break the caller.
 		}
 	}
 

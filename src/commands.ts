@@ -167,15 +167,10 @@ export function buildShowReport(info: TimeDisplayInfo): string {
 	return lines.join("\n");
 }
 
-export function widgetLines(nowMs: number, anchor: SessionAnchorV1, policy: TimePolicyV1): string[] {
-	const lines = [`pi-time-context 现在 ${formatClockMinute(nowMs, policy.timeZone)}`];
+/** Compact text for the footer status line: current time plus next checkpoint. */
+export function statusLine(nowMs: number, anchor: SessionAnchorV1, policy: TimePolicyV1): string {
 	const next = nextCheckpointAt(nowMs, anchor, policy);
-	lines.push(
-		next === undefined
-			? "每条消息附着时间戳"
-			: `下次检查点 ${formatClockMinute(next, policy.timeZone)}（间隔 ${Math.round(
-					policy.checkpointIntervalMs / 60_000,
-				)} 分钟）`,
-	);
-	return lines;
+	const time = formatClockMinute(nowMs, policy.timeZone);
+	if (next === undefined) return time;
+	return `${time} · 下次检查点 ${formatClockMinute(next, policy.timeZone)}`;
 }

@@ -117,24 +117,21 @@
 
 - 渲染规则：
   - `stamp === null`（未盖章的决策）：返回 `undefined`（不占行），保持聊天流干净；
-  - 有 stamp：单行紧凑文本 `⏱ sent_at HH:MM +08:00 · 距上次活动 2小时15分钟`（无 elapsed 时省略后半段），文字用 theme 的 `dim` 色；时间戳按本机时区（`local`）渲染；
+  - 有 stamp：单行紧凑文本 `sent_at HH:MM +08:00 · 距上次活动 2小时15分钟`（无 elapsed 时省略后半段），文字用 theme 的 `dim` 色；时间戳按本机时区（`local`）渲染；
+  - 已知限制：宿主在每个 custom entry 前固定插入一个空行（`CustomEntryComponent`），渲染器无法去除，故标记与消息之间有一个空行的间距。
   - `expanded` 时附加展示决策标识（carrier 条目 id、checkpoint bucket）；
   - 数据版本不为 1 的条目不渲染。
 - 渲染仅为显示，`expanded` 之外不引入新数据读取；渲染函数保持同步、开销小。
 - 历史会话 resume / reload 后，已持久化的决策 entry 自动获得同样的渲染。
 
-### 6.2 Widget（方案三）
+### 6.2 状态栏（方案三）
 
-- TUI 模式下用 `ctx.ui.setWidget("pi-time-context", [...], { placement: "aboveEditor" })` 常驻显示两行：
+原设计的编辑器上方 widget 已按用户要求移除，改为 footer 状态行：
 
-  ```text
-  现在时间：14:32 +08:00
-  下次检查点：15:00（interval 30 分钟）
-  ```
-
-- 更新时机：不做定时器（维持"无后台工作"原则）。在已有的事件点刷新：每次 carrier 决策后、每次 `/time-config` 执行后、session 生命周期事件。两次事件之间的"现在时间"允许陈旧。
-- 无 UI（print / json 模式）下跳过 widget。
-- widget 内容同样基于当前生效修订（`resolvePolicy`），修改配置后立即反映新的下次检查点。
+- TUI 模式下用 `ctx.ui.setStatus("pi-time-context", "14:32 · 下次检查点 15:00")` 在窗口最底部的扩展状态行显示当前时间与下次检查点（每条消息模式只显示时间）；
+- 更新时机：不做定时器（维持"无后台工作"原则）。在已有的事件点刷新：每次 carrier 决策后、每次 `/time-config` 执行后。两次事件之间的"现在时间"允许陈旧；
+- 无 UI（print / json 模式）下跳过；
+- 内容基于当前生效修订（`resolvePolicy`），修改配置后立即反映。
 
 ### 6.3 `/time-config show`（方案三）
 

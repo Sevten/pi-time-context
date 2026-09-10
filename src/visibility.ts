@@ -8,7 +8,7 @@ import type { CarrierDecisionV1 } from "./types.js";
 /** Compact single-line text for a stamped decision, or undefined when unstamped. */
 export function decisionDisplayText(decision: CarrierDecisionV1): string | undefined {
 	if (!decision.stamp) return undefined;
-	const parts = [`⏱ sent_at ${formatLocalMinute(decision.firstSentAtMs, resolveTimeZone("local") ?? "UTC")}`];
+	const parts = [`sent_at ${formatLocalMinute(decision.firstSentAtMs, resolveTimeZone("local") ?? "UTC")}`];
 	if (decision.stamp.elapsedMinutes !== undefined) {
 		parts.push(`距上次活动 ${formatElapsedMinutes(decision.stamp.elapsedMinutes)}`);
 	}
@@ -19,6 +19,8 @@ export function decisionDisplayText(decision: CarrierDecisionV1): string | undef
  * Inline TUI rendering for persisted carrier decisions. Display-only: the
  * session data and the model context are never touched. Rendering runs where
  * the decision entry sits on the timeline, directly after the stamped message.
+ * Note: the host inserts a one-line spacer before every custom entry; that
+ * spacing is not controllable from the renderer.
  */
 export function registerDecisionRenderer(pi: ExtensionAPI): void {
 	pi.registerEntryRenderer<CarrierDecisionV1>(CARRIER_DECISION_ENTRY, (entry, { expanded }, theme) => {
