@@ -35,13 +35,15 @@ describe("configuration", () => {
 			previousActivityThresholdMinutes: 15,
 			timeZone: "UTC",
 			showInjectedTime: true,
+			stampEveryMessage: false,
 		});
+>>>>>>> cc5e27d (Add /time-config command, in-session policy revisions, and stamp-every-message mode)
 		expect(result.warnings).toHaveLength(1);
-			expect(freezePolicy(result.config)).toEqual({
+		expect(freezePolicy(result.config)).toEqual({
 			checkpointIntervalMs: 45 * 60_000,
 			previousActivityThresholdMs: 15 * 60_000,
 			timeZone: "UTC",
-			renderVersion: 1,
+			stampEveryMessage: false,			renderVersion: 1,
 		});
 	});
 
@@ -63,7 +65,7 @@ describe("configuration", () => {
 			checkpointIntervalMinutes: 45,
 			previousActivityThresholdMinutes: 30,
 			timeZone: "UTC",
-		});
+			stampEveryMessage: false,		});
 		expect(result.warnings).toEqual([]);
 	});
 

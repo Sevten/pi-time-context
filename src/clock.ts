@@ -60,6 +60,25 @@ export function formatLocalMinute(epochMs: number, timeZone: string): string {
 	return `${year}-${month}-${day} ${hour}:${minute} ${offset}`;
 }
 
+export function formatClockMinute(epochMs: number, timeZone: string): string {
+	if (!isValidEpochMs(epochMs)) {
+		throw new RangeError("Cannot format an invalid epoch timestamp");
+	}
+	const parts = new Intl.DateTimeFormat("en-US", {
+		timeZone,
+		hour: "2-digit",
+		minute: "2-digit",
+		hourCycle: "h23",
+	}).formatToParts(epochMs);
+	const values = new Map(parts.map((part) => [part.type, part.value]));
+	const hour = values.get("hour");
+	const minute = values.get("minute");
+	if (!hour || !minute) {
+		throw new RangeError(`Time zone ${timeZone} did not produce complete time parts`);
+	}
+	return `${hour}:${minute}`;
+}
+
 export function roundElapsedMinutes(elapsedMs: number): number {
 	return Math.max(0, Math.round(elapsedMs / MINUTE_MS));
 }

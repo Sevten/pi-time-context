@@ -23,7 +23,7 @@ export function anchor(t0Ms = 0): SessionAnchorV1 {
 			checkpointIntervalMs: 30 * 60_000,
 			previousActivityThresholdMs: 30 * 60_000,
 			timeZone: "UTC",
-			renderVersion: 1,
+			stampEveryMessage: false,			renderVersion: 1,
 		},
 	};
 }

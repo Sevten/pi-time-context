@@ -1,4 +1,4 @@
-import type { ContextEvent, ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
+import type { ContextEvent, ExtensionAPI, ExtensionCommandContext, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import { ActivityTracker } from "./activity-tracker.js";
 import {
 	associateCarrierMessages,
@@ -7,11 +7,25 @@ import {
 	selectCarrier,
 } from "./carrier.js";
 import { createCarrierDecision, createNullDecision } from "./checkpoint.js";
-import { readClock, systemClock } from "./clock.js";
-import { type ConfigLoadResult, freezePolicy, loadConfig } from "./config.js";
+import { readClock, resolveTimeZone, systemClock } from "./clock.js";
+import {
+	type ConfigLoadResult,
+	type TimeContextConfig,
+	freezePolicy,
+	loadConfig,
+} from "./config.js";
+import {
+	buildShowReport,
+	configPaths,
+	parseIntervalValue,
+	parseTimeConfigArgs,
+	widgetLines,
+	writeConfigLayer,
+} from "./commands.js";
 import { transformContextMessages } from "./context-transform.js";
 import { copyForkMetadata } from "./fork-copy.js";
 import { renderDecision } from "./renderer.js";
+import { resolvePolicy } from "./policy-revisions.js";
 import type {
 	AgentMessage,
 	AssistantMessageEvent,
@@ -23,19 +37,24 @@ import { carrierEntryIds, isSessionMessageEntry, recoverState } from "./state.js
 import {
 	ACTIVITY_FACTS_ENTRY,
 	CARRIER_DECISION_ENTRY,
+	POLICY_REVISIONS_ENTRY,
 	SESSION_ANCHOR_ENTRY,
 	type ActivityFactsV1,
 	type CarrierAssociation,
 	type CarrierDecisionV1,
 	type Clock,
+	type PolicyRevisionV1,
 	type RecoveredState,
 	type SessionAnchorV1,
+	type TimePolicyV1,
 } from "./types.js";
 
 export interface RuntimeOptions {
 	clock?: Clock;
 	configLoader?: (cwd: string, includeProjectConfig: boolean) => ConfigLoadResult;
 	warn?: (message: string) => void;
+	homeDirectory?: string;
+	configDirectoryName?: string;
 }
 
 function emptyState(): RecoveredState {
@@ -43,6 +62,7 @@ function emptyState(): RecoveredState {
 		activitiesByKey: new Map(),
 		decisionsByCarrierId: new Map(),
 		lastStampedCheckpointIndex: 0,
+		revisions: [],
 	};
 }
 
@@ -51,6 +71,8 @@ export class TimeContextRuntime {
 	private readonly clock: Clock;
 	private readonly configLoader: (cwd: string, includeProjectConfig: boolean) => ConfigLoadResult;
 	private readonly externalWarn?: (message: string) => void;
+	private readonly homeDirectory?: string;
+	private readonly configDirectoryName?: string;
 	private readonly warnings = new Set<string>();
 	private readonly tracker: ActivityTracker;
 	private showInjectedTime = false;
@@ -69,6 +91,8 @@ export class TimeContextRuntime {
 			options.configLoader ??
 			((cwd, includeProjectConfig) => loadConfig(cwd, { includeProjectConfig }));
 		this.externalWarn = options.warn;
+		this.homeDirectory = options.homeDirectory;
+		this.configDirectoryName = options.configDirectoryName;
 		this.tracker = new ActivityTracker(this.clock, (message) => this.warn(message));
 	}
 
@@ -255,17 +279,19 @@ export class TimeContextRuntime {
 		if (!anchor) return;
 		const isBaseline = migrationCreated || (this.baselinePending && selected.kind === "user");
 		const firstSentAtMs = isBaseline ? anchor.t0Ms : (requestAtMs ?? anchor.t0Ms);
+		const policy = resolvePolicy(anchor, this.state.revisions, firstSentAtMs);
 		if (!isBaseline && requestAtMs === undefined) {
 			this.warn("Clock is invalid; persisting a null decision for this carrier");
 			this.persistDecision(
-				createNullDecision(selected.entryId, selected.kind, firstSentAtMs, anchor),
+				createNullDecision(selected.entryId, selected.kind, firstSentAtMs, anchor.t0Ms, policy),
 			);
 		} else {
 			const result = createCarrierDecision({
 				carrierEntryId: selected.entryId,
 				carrierKind: selected.kind,
 				firstSentAtMs,
-				anchor,
+				t0Ms: anchor.t0Ms,
+				policy,
 				lastStampedCheckpointIndex: this.state.lastStampedCheckpointIndex,
 				isBaseline,
 				previousActivity: findPreviousCompletedActivity(selected, this.state.activitiesByKey),
@@ -280,7 +306,7 @@ export class TimeContextRuntime {
 		for (const carrier of eligible) {
 			if (carrier.entryId === selected.entryId) continue;
 			this.persistDecision(
-				createNullDecision(carrier.entryId, carrier.kind, requestAtMs ?? anchor.t0Ms, anchor),
+				createNullDecision(carrier.entryId, carrier.kind, requestAtMs ?? anchor.t0Ms, anchor.t0Ms, policy),
 			);
 		}
 		for (const carrier of eligible) this.activationCarrierIds.add(carrier.entryId);
@@ -295,6 +321,7 @@ export class TimeContextRuntime {
 		const associations = associateCarrierMessages(event.messages, ctx.sessionManager.getBranch());
 		const group = findTailCarrierGroup(event.messages, associations);
 		this.createDecisionsForNewGroup(group, requestAtMs, ctx);
+		this.updateWidget(ctx);
 
 		const anchor = this.state.anchor;
 		if (!anchor) return { messages: [...event.messages] };
@@ -304,13 +331,154 @@ export class TimeContextRuntime {
 				associations,
 				this.state.decisionsByCarrierId,
 				anchor,
+				this.state.revisions,
 			),
 		};
+	}
+
+	private updateWidget(ctx: ExtensionContext): void {
+		if (!ctx.hasUI || !this.state.anchor) return;
+		const nowMs = readClock(this.clock);
+		if (nowMs === undefined) return;
+		const policy = resolvePolicy(this.state.anchor, this.state.revisions, nowMs);
+		try {
+			ctx.ui.setWidget("pi-time-context", widgetLines(nowMs, this.state.anchor, policy));
+		} catch {
+			// Widget display is best-effort; never break the caller.
+		}
+	}
+
+	private appendRevision(policy: TimePolicyV1, scope: "project" | "global"): void {
+		const nowMs = readClock(this.clock);
+		if (nowMs === undefined) {
+			this.warn("Clock is invalid; policy revision was not recorded");
+			return;
+		}
+		const revision: PolicyRevisionV1 = {
+			version: 1,
+			effectiveFromMs: nowMs,
+			policy,
+			source: "command",
+			scope,
+		};
+		this.pi.appendEntry(POLICY_REVISIONS_ENTRY, revision);
+		this.state.revisions = [...this.state.revisions, revision].sort(
+			(a, b) => a.effectiveFromMs - b.effectiveFromMs,
+		);
+	}
+
+	private currentEffectivePolicy(): { anchor: SessionAnchorV1; policy: TimePolicyV1 } | undefined {
+		if (!this.state.anchor) return undefined;
+		const nowMs = readClock(this.clock);
+		if (nowMs === undefined) return undefined;
+		return { anchor: this.state.anchor, policy: resolvePolicy(this.state.anchor, this.state.revisions, nowMs) };
+	}
+
+	async handleTimeConfig(args: string, ctx: ExtensionCommandContext): Promise<void> {
+		const parsed = parseTimeConfigArgs(args);
+		if (!parsed.args) {
+			ctx.ui.notify(parsed.error ?? "参数解析失败", "error");
+			return;
+		}
+		const { action, global } = parsed.args;
+		const paths = configPaths(ctx.cwd, {
+			homeDirectory: this.homeDirectory,
+			configDirectoryName: this.configDirectoryName,
+		});
+
+		if (action === "show") {
+			const nowMs = readClock(this.clock);
+			if (!this.state.anchor || nowMs === undefined) {
+				ctx.ui.notify("pi-time-context 尚未激活（等待第一条用户消息）");
+				return;
+			}
+			ctx.ui.notify(
+				buildShowReport({
+					anchor: this.state.anchor,
+					revisions: this.state.revisions,
+					decisions: [...this.state.decisionsByCarrierId.values()],
+					nowMs,
+				}),
+			);
+			return;
+		}
+
+		const effective = this.currentEffectivePolicy();
+		if (!effective) {
+			ctx.ui.notify("pi-time-context 尚未激活（等待第一条用户消息），修改将在新会话生效", "warning");
+			return;
+		}
+		const currentConfig: TimeContextConfig = {
+			checkpointIntervalMinutes: Math.round(effective.policy.checkpointIntervalMs / 60_000),
+			previousActivityThresholdMinutes: Math.round(effective.policy.previousActivityThresholdMs / 60_000),
+			timeZone: effective.policy.timeZone,
+			stampEveryMessage: effective.policy.stampEveryMessage,
+		};
+		const scope = global ? "global" : "project";
+		const targetPath = global ? paths.globalPath : paths.projectPath;
+
+		let patch: Partial<TimeContextConfig>;
+		let nextPolicy: TimePolicyV1;
+		if (action === "every") {
+			const enabled = !effective.policy.stampEveryMessage;
+			patch = { stampEveryMessage: enabled };
+			nextPolicy = { ...effective.policy, stampEveryMessage: enabled };
+		} else if (action === "interval") {
+			const minutes = parsed.args.value !== undefined ? parseIntervalValue(parsed.args.value) : undefined;
+			if (minutes === undefined) {
+				ctx.ui.notify("间隔必须是 1 到 10080 之间的整数分钟", "error");
+				return;
+			}
+			patch = { checkpointIntervalMinutes: minutes, stampEveryMessage: false };
+			nextPolicy = {
+				...effective.policy,
+				checkpointIntervalMs: minutes * 60_000,
+				stampEveryMessage: false,
+			};
+		} else if (action === "threshold") {
+			const minutes = parsed.args.value !== undefined ? parseIntervalValue(parsed.args.value) : undefined;
+			if (minutes === undefined) {
+				ctx.ui.notify("阈值必须是 1 到 10080 之间的整数分钟", "error");
+				return;
+			}
+			patch = { previousActivityThresholdMinutes: minutes };
+			nextPolicy = { ...effective.policy, previousActivityThresholdMs: minutes * 60_000 };
+		} else {
+			const requested = parsed.args.value ?? "";
+			if (!resolveTimeZone(requested)) {
+				ctx.ui.notify(`无法识别的时区 “${requested}”（可用 local、UTC 或 IANA 名称）`, "error");
+				return;
+			}
+			patch = { timeZone: requested };
+			nextPolicy = { ...effective.policy, timeZone: resolveTimeZone(requested) ?? effective.policy.timeZone };
+		}
+
+		try {
+			writeConfigLayer(targetPath, patch);
+		} catch (error) {
+			ctx.ui.notify(`写入 ${targetPath} 失败：${error instanceof Error ? error.message : String(error)}`, "error");
+			return;
+		}
+		this.appendRevision(nextPolicy, scope);
+		const summary =
+			action === "every"
+				? `每条消息附着时间戳：${nextPolicy.stampEveryMessage ? "开" : "关"}`
+				: action === "tz"
+					? `时区：${nextPolicy.timeZone}`
+					: action === "interval"
+						? `检查点间隔：${nextPolicy.stampEveryMessage ? "每条消息" : `${Math.round(nextPolicy.checkpointIntervalMs / 60_000)} 分钟`}`
+						: `上一活动阈值：${Math.round(nextPolicy.previousActivityThresholdMs / 60_000)} 分钟`;
+		ctx.ui.notify(`${summary}（已写入 ${scope === "global" ? "全局" : "项目"}层，对后续消息生效）`);
+		this.updateWidget(ctx);
 	}
 }
 
 export function registerTimeContextExtension(pi: ExtensionAPI, options: RuntimeOptions = {}): TimeContextRuntime {
 	const runtime = new TimeContextRuntime(pi, options);
+	pi.registerCommand("time-config", {
+		description: "查看/修改 pi-time-context 配置（间隔、阈值、时区、每条消息模式）",
+		handler: (args, ctx) => runtime.handleTimeConfig(args, ctx),
+	});
 	pi.on("session_start", (event, ctx) => runtime.onSessionStart(event, ctx));
 	pi.on("session_tree", (_event, ctx) => runtime.onTreeChanged(ctx));
 	pi.on("context", (event, ctx) => runtime.onContext(event, ctx));

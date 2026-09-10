@@ -3,15 +3,18 @@ import type { AgentMessage } from "./pi-types.js";
 import {
 	ACTIVITY_FACTS_ENTRY,
 	CARRIER_DECISION_ENTRY,
+	POLICY_REVISIONS_ENTRY,
 	SESSION_ANCHOR_ENTRY,
 	type ActivityV1,
 	type CarrierDecisionV1,
+	type PolicyRevisionV1,
 	type RecoveredState,
 	type WarningSink,
 } from "./types.js";
 import {
 	parseActivityFacts,
 	parseCarrierDecision,
+	parsePolicyRevision,
 	parseSessionAnchor,
 	recordsFromEntries,
 } from "./persistence.js";
@@ -63,6 +66,7 @@ export function recoverState(
 	const references = collectBranchReferences(branch);
 	const activitiesByKey = new Map<string, ActivityV1>();
 	const decisionsByCarrierId = new Map<string, CarrierDecisionV1>();
+	const revisions: PolicyRevisionV1[] = [];
 	let anchor: RecoveredState["anchor"];
 
 	for (const record of recordsFromEntries(entries)) {
@@ -77,6 +81,11 @@ export function recoverState(
 					activitiesByKey.set(activity.key, activity);
 				}
 			}
+			continue;
+		}
+		if (record.customType === POLICY_REVISIONS_ENTRY) {
+			const revision = parsePolicyRevision(record.data, warn);
+			if (revision) revisions.push(revision);
 			continue;
 		}
 		if (record.customType === CARRIER_DECISION_ENTRY) {
@@ -97,7 +106,13 @@ export function recoverState(
 			lastStampedCheckpointIndex = Math.max(lastStampedCheckpointIndex, decision.checkpointIndex);
 		}
 	}
-	return { anchor, activitiesByKey, decisionsByCarrierId, lastStampedCheckpointIndex };
+	return {
+		anchor,
+		activitiesByKey,
+		decisionsByCarrierId,
+		lastStampedCheckpointIndex,
+		revisions: revisions.sort((a, b) => a.effectiveFromMs - b.effectiveFromMs),
+	};
 }
 
 export function carrierEntryIds(branch: readonly SessionEntry[]): Set<string> {

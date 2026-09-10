@@ -85,6 +85,7 @@ function createHarness(
 					previousActivityThresholdMinutes: 30,
 					timeZone: "UTC",
 					showInjectedTime: options.showInjectedTime ?? false,
+					stampEveryMessage: false,
 				},
 				warnings: [],
 			}))
@@ -155,7 +156,7 @@ describe("runtime lifecycle", () => {
 						checkpointIntervalMinutes: 30,
 						previousActivityThresholdMinutes: 30,
 						timeZone: "UTC",
-					},
+						stampEveryMessage: false,					},
 					warnings: [],
 				};
 			},

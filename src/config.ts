@@ -9,6 +9,7 @@ export interface TimeContextConfig {
 	previousActivityThresholdMinutes: number;
 	timeZone: string;
 	showInjectedTime: boolean;
+	stampEveryMessage: boolean;
 }
 
 export interface ConfigLoadResult {
@@ -27,14 +28,26 @@ export const DEFAULT_CONFIG: Readonly<TimeContextConfig> = {
 	previousActivityThresholdMinutes: 30,
 	timeZone: "local",
 	showInjectedTime: false,
+	stampEveryMessage: false,
 };
 
-const MIN_INTERVAL_MINUTES = 1;
-const MAX_INTERVAL_MINUTES = 10_080;
+export const MIN_INTERVAL_MINUTES = 1;
+export const MAX_INTERVAL_MINUTES = 10_080;
+
+export function isValidIntervalMinutes(value: unknown): value is number {
+	return (
+		typeof value === "number" &&
+		Number.isFinite(value) &&
+		value >= MIN_INTERVAL_MINUTES &&
+		value <= MAX_INTERVAL_MINUTES
+	);
+}
+
 const SUPPORTED_CONFIG_KEYS: ReadonlySet<string> = new Set([
 	"checkpointIntervalMinutes",
 	"previousActivityThresholdMinutes",
 	"timeZone",
+	"stampEveryMessage",
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -67,15 +80,18 @@ function applyLayer(
 	for (const key of ["checkpointIntervalMinutes", "previousActivityThresholdMinutes"] as const) {
 		const value = layer[key];
 		if (value === undefined) continue;
-		if (
-			typeof value === "number" &&
-			Number.isFinite(value) &&
-			value >= MIN_INTERVAL_MINUTES &&
-			value <= MAX_INTERVAL_MINUTES
-		) {
+		if (isValidIntervalMinutes(value)) {
 			next[key] = value;
 		} else {
 			warnings.push(`${path}: ${key} must be a finite number from 1 through 10080`);
+		}
+	}
+
+	if (layer.stampEveryMessage !== undefined) {
+		if (typeof layer.stampEveryMessage === "boolean") {
+			next.stampEveryMessage = layer.stampEveryMessage;
+		} else {
+			warnings.push(`${path}: stampEveryMessage must be a boolean`);
 		}
 	}
 
@@ -124,5 +140,6 @@ export function freezePolicy(config: TimeContextConfig, warn?: WarningSink): Tim
 		previousActivityThresholdMs: config.previousActivityThresholdMinutes * MINUTE_MS,
 		timeZone: timeZone ?? "UTC",
 		renderVersion: 1,
+		stampEveryMessage: config.stampEveryMessage,
 	};
 }

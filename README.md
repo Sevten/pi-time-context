@@ -112,6 +112,7 @@ The extension works without a configuration file. Its defaults are:
 | `checkpointIntervalMinutes` | `30` | Minutes between timestamp checkpoints. |
 | `previousActivityThresholdMinutes` | `30` | Minimum activity gap before adding `elapsed_since_last_activity`. The comparison is strictly greater than this value. |
 | `timeZone` | `"local"` | Time zone used to render `sent_at`. |
+| `stampEveryMessage` | `false` | Stamp every outbound user and tool-result message instead of using checkpoint intervals. |
 
 Create a global configuration file at:
 
@@ -131,10 +132,34 @@ Example:
 {
   "checkpointIntervalMinutes": 30,
   "previousActivityThresholdMinutes": 30,
+<<<<<<< HEAD
   "timeZone": "local",
   "showInjectedTime": false
+=======
+  "timeZone": "Asia/Shanghai",
+  "stampEveryMessage": false
+>>>>>>> cc5e27d (Add /time-config command, in-session policy revisions, and stamp-every-message mode)
 }
 ```
+
+### The `/time-config` command
+
+Inside Pi you can inspect and change the configuration without leaving the session:
+
+```text
+/time-config                          show the interactive menu
+/time-config show                     current effective config and recent stamps
+/time-config interval <minutes> [-g]  change the checkpoint interval
+/time-config every [-g]               toggle stamping every message
+/time-config threshold <minutes> [-g] change the previous-activity threshold
+/time-config tz <IANA|local|UTC> [-g] change the render time zone
+```
+
+- Without `-g` / `--global` the change is written to the project config file; with it, to the global file.
+- Every successful change also records an in-session policy revision, so it takes effect immediately for messages that have not been sent yet. Previously stamped messages are never re-rendered.
+- Switching intervals re-buckets checkpoints from the session anchor (T0); the next stamp may therefore arrive sooner or later than the old phase implied.
+- A status widget above the editor shows the current time and the next checkpoint while the extension is active.
+- Configuration files are only read when a session anchor is created; editing them mid-session does not affect the running session (use `/time-config` instead).
 
 ### Configuration rules
 

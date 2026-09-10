@@ -4,11 +4,14 @@ import { isValidEpochMs, resolveTimeZone } from "./clock.js";
 import {
 	ACTIVITY_FACTS_ENTRY,
 	CARRIER_DECISION_ENTRY,
+	POLICY_REVISIONS_ENTRY,
 	SESSION_ANCHOR_ENTRY,
 	type ActivityFactsV1,
 	type ActivityV1,
 	type CarrierDecisionV1,
+	type PolicyRevisionV1,
 	type SessionAnchorV1,
+	type TimePolicyV1,
 	type WarningSink,
 } from "./types.js";
 
@@ -27,6 +30,26 @@ function isFiniteEpoch(value: unknown): value is number {
 
 function isPositiveFinite(value: unknown): value is number {
 	return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function parsePolicy(data: unknown, warn?: WarningSink): TimePolicyV1 | undefined {
+	if (!isRecord(data) || !isRecord(data.policy)) return undefined;
+	const raw = data.policy;
+	if (
+		!isPositiveFinite(raw.checkpointIntervalMs) ||
+		!isPositiveFinite(raw.previousActivityThresholdMs) ||
+		(typeof raw.timeZone !== "string" || !resolveTimeZone(raw.timeZone)) ||
+		raw.renderVersion !== 1
+	) {
+		return undefined;
+	}
+	return {
+		checkpointIntervalMs: raw.checkpointIntervalMs,
+		previousActivityThresholdMs: raw.previousActivityThresholdMs,
+		timeZone: raw.timeZone,
+		renderVersion: 1,
+		stampEveryMessage: raw.stampEveryMessage === true,
+	};
 }
 
 function parseActivity(value: unknown): ActivityV1 | undefined {
@@ -87,15 +110,8 @@ export function parseSessionAnchor(data: unknown, warn?: WarningSink): SessionAn
 		warn?.(`Ignoring unsupported session anchor version ${String(data.version)}`);
 		return undefined;
 	}
-	if (
-		!isFiniteEpoch(data.t0Ms) ||
-		(data.origin !== "first_user_processed" && data.origin !== "legacy_activation") ||
-		!isRecord(data.policy) ||
-		!isPositiveFinite(data.policy.checkpointIntervalMs) ||
-		!isPositiveFinite(data.policy.previousActivityThresholdMs) ||
-		(typeof data.policy.timeZone !== "string" || !resolveTimeZone(data.policy.timeZone)) ||
-		data.policy.renderVersion !== 1
-	) {
+	const policy = parsePolicy(data, warn);
+	if (!isFiniteEpoch(data.t0Ms) || (data.origin !== "first_user_processed" && data.origin !== "legacy_activation") || !policy) {
 		warn?.("Ignoring malformed session anchor version 1");
 		return undefined;
 	}
@@ -103,12 +119,35 @@ export function parseSessionAnchor(data: unknown, warn?: WarningSink): SessionAn
 		version: 1,
 		t0Ms: data.t0Ms,
 		origin: data.origin,
-		policy: {
-			checkpointIntervalMs: data.policy.checkpointIntervalMs,
-			previousActivityThresholdMs: data.policy.previousActivityThresholdMs,
-			timeZone: data.policy.timeZone,
-			renderVersion: 1,
-		},
+		policy,
+	};
+}
+
+export function parsePolicyRevision(data: unknown, warn?: WarningSink): PolicyRevisionV1 | undefined {
+	if (!isRecord(data)) {
+		warn?.("Ignoring malformed policy revision");
+		return undefined;
+	}
+	if (data.version !== 1) {
+		warn?.(`Ignoring unsupported policy revision version ${String(data.version)}`);
+		return undefined;
+	}
+	const policy = parsePolicy(data, warn);
+	if (
+		!isFiniteEpoch(data.effectiveFromMs) ||
+		!policy ||
+		data.source !== "command" ||
+		(data.scope !== "project" && data.scope !== "global")
+	) {
+		warn?.("Ignoring malformed policy revision version 1");
+		return undefined;
+	}
+	return {
+		version: 1,
+		effectiveFromMs: data.effectiveFromMs,
+		policy,
+		source: data.source,
+		scope: data.scope,
 	};
 }
 

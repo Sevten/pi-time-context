@@ -1,7 +1,9 @@
 import type { AgentMessage } from "./pi-types.js";
+import { resolvePolicy } from "./policy-revisions.js";
 import type {
 	CarrierAssociation,
 	CarrierDecisionV1,
+	PolicyRevisionV1,
 	SessionAnchorV1,
 } from "./types.js";
 import { renderDecision, renderSessionStart } from "./renderer.js";
@@ -32,6 +34,7 @@ export function transformContextMessages(
 	associations: readonly CarrierAssociation[],
 	decisions: ReadonlyMap<string, CarrierDecisionV1>,
 	anchor: SessionAnchorV1,
+	revisions: readonly PolicyRevisionV1[] = [],
 ): AgentMessage[] {
 	const next = [...messages];
 	let changed = false;
@@ -50,7 +53,8 @@ export function transformContextMessages(
 	for (const association of associations) {
 		const decision = decisions.get(association.entryId);
 		if (!decision) continue;
-		const rendered = renderDecision(decision, anchor.policy);
+		const policy = resolvePolicy(anchor, revisions, decision.firstSentAtMs);
+		const rendered = renderDecision(decision, policy);
 		if (!rendered) continue;
 		const message = next[association.messageIndex];
 		if (!message) continue;
