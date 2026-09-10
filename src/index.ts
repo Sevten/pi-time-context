@@ -518,7 +518,7 @@ export function registerTimeContextExtension(pi: ExtensionAPI, options: RuntimeO
 	const runtime = new TimeContextRuntime(pi, options);
 	registerDecisionRenderer(pi);
 	pi.registerCommand("time-config", {
-		description: "View/modify pi-time-context configuration (interval, threshold, time zone, every-message mode)",
+		description: "Modify pi-time-context configuration",
 		handler: (args, ctx) => runtime.handleTimeConfig(args, ctx),
 	});
 	pi.on("session_start", (event, ctx) => runtime.onSessionStart(event, ctx));
