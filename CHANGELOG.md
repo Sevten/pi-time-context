@@ -4,7 +4,7 @@
 
 ### Added
 
-- `/time-config` without arguments now opens an interactive menu in UI modes (`ctx.ui.select`/`input`): pick interval or threshold presets (or a custom value), choose the time zone, and select the project or global config layer. Non-UI modes keep the usage text.
+- `/time-config` without arguments now opens an interactive menu: pick interval or threshold presets (or a custom value), choose the time zone, and select the project or global config layer. Implemented as a single custom TUI component (like pi's built-in menus), so navigating between steps and back does not flash the editor. Non-UI modes keep the usage text.
 - `/time-config` can now be used before the session anchor exists: `show` displays the pending configuration, and change actions write the config layer so the new policy is adopted at activation.
 
 ### Fixed

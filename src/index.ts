@@ -19,12 +19,12 @@ import {
 	buildInactiveShowReport,
 	buildShowReport,
 	configPaths,
-	type GlobalProjectPaths,
 	parseIntervalValue,
 	parseTimeConfigArgs,
 	USAGE,
 	writeConfigLayer,
 } from "./commands.js";
+import { runTimeConfigMenu } from "./time-config-menu.js";
 import { transformContextMessages } from "./context-transform.js";
 import { copyForkMetadata } from "./fork-copy.js";
 import { renderDecision } from "./renderer.js";
@@ -414,13 +414,11 @@ export class TimeContextRuntime {
 		action: "interval" | "threshold" | "tz" | "every",
 		scope: "project" | "global",
 		targetPath: string,
-		ctx: ExtensionCommandContext,
-	): void {
+	): { summary: string } | { error: string } {
 		try {
 			writeConfigLayer(targetPath, change.patch);
 		} catch (error) {
-			ctx.ui.notify(`Failed to write ${targetPath}: ${error instanceof Error ? error.message : String(error)}`, "error");
-			return;
+			return { error: `Failed to write ${targetPath}: ${error instanceof Error ? error.message : String(error)}` };
 		}
 		if (effective) this.appendRevision(change.nextPolicy, scope);
 		const policy = change.nextPolicy;
@@ -435,7 +433,7 @@ export class TimeContextRuntime {
 		const scopeNote = effective
 			? `written to ${targetPath}; applies to subsequent messages`
 			: `written to ${targetPath}; takes effect when the session activates (first user message)`;
-		ctx.ui.notify(`${summary} (${scopeNote})`);
+		return { summary: `${summary} (${scopeNote})` };
 	}
 
 	private showReport(ctx: ExtensionCommandContext): void {
@@ -460,110 +458,39 @@ export class TimeContextRuntime {
 		);
 	}
 
-	private async pickScope(ctx: ExtensionCommandContext, paths: GlobalProjectPaths): Promise<"project" | "global" | undefined> {
-		const choice = await ctx.ui.select(
-			`Write to which layer?  Project: ${paths.projectPath}  ·  Global: ${paths.globalPath}`,
-			["Project", "Global"],
-		);
-		if (choice === undefined) return undefined;
-		return choice === "Project" ? "project" : "global";
-	}
-
-	private async pickMinutes(
-		ctx: ExtensionCommandContext,
-		title: string,
-		allowEveryMessage: boolean,
-	): Promise<{ kind: "every" } | { kind: "minutes"; minutes: number } | undefined> {
-		const every = "Every message";
-		const custom = "Custom…";
-		const presets = [5, 10, 15, 30, 60, 120];
-		const options = [
-			...(allowEveryMessage ? [every] : []),
-			...presets.map((minutes) => `${minutes} min`),
-			custom,
-		];
-		const choice = await ctx.ui.select(title, options);
-		if (choice === undefined) return undefined;
-		if (choice === every) return { kind: "every" };
-		if (choice !== custom) {
-			return { kind: "minutes", minutes: presets[options.indexOf(choice)] };
-		}
-		for (;;) {
-			const raw = await ctx.ui.input(title, "Minutes (1-10080)");
-			if (raw === undefined) return undefined;
-			const minutes = parseIntervalValue(raw.trim());
-			if (minutes !== undefined) return { kind: "minutes", minutes };
-			ctx.ui.notify("Interval must be an integer between 1 and 10080 minutes", "error");
-		}
-	}
-
-	private async pickTimeZone(ctx: ExtensionCommandContext): Promise<string | undefined> {
-		const custom = "Custom…";
-		const choice = await ctx.ui.select("Time zone", ["local", "UTC", custom]);
-		if (choice === undefined) return undefined;
-		if (choice !== custom) return choice;
-		for (;;) {
-			const raw = await ctx.ui.input("Time zone", "IANA name (e.g. Asia/Shanghai)");
-			if (raw === undefined) return undefined;
-			const trimmed = raw.trim();
-			if (resolveTimeZone(trimmed)) return trimmed;
-			ctx.ui.notify(`Unrecognized time zone "${trimmed}" (use local, UTC, or an IANA name)`, "error");
-		}
-	}
-
 	private async runInteractiveMenu(ctx: ExtensionCommandContext): Promise<void> {
 		const paths = configPaths(ctx.cwd, {
 			homeDirectory: this.homeDirectory,
 			configDirectoryName: this.configDirectoryName,
 		});
-		for (;;) {
-			const config = this.loadCurrentConfig(ctx);
-			const action = await ctx.ui.select("pi-time-context", [
-				"interval", "threshold", "timeZone", "show", "exit",
-			]);
-			if (action === undefined || action === "exit") return;
-
-			if (action === "show") {
-				this.showReport(ctx);
-				continue;
-			}
-
-			const kind = action as "interval" | "threshold" | "tz";
-			const effective = this.currentEffectivePolicy();
-			if (kind === "tz") {
-				const timeZone = await this.pickTimeZone(ctx);
-				if (timeZone === undefined) continue;
-				const scope = await this.pickScope(ctx, paths);
-				if (scope === undefined) continue;
-				const change = this.computeChange("tz", config, { timeZone });
-				if (change.error) {
-					ctx.ui.notify(change.error, "error");
-					continue;
+		await runTimeConfigMenu(ctx, {
+			loadConfig: () => this.loadCurrentConfig(ctx),
+			showReport: () => {
+				const nowMs = readClock(this.clock);
+				if (nowMs === undefined || !this.state.anchor) {
+					return buildInactiveShowReport(() => this.loadCurrentConfig(ctx));
 				}
-				this.commitChange(effective, change, "tz", scope, scope === "global" ? paths.globalPath : paths.projectPath, ctx);
-			} else {
-				const picked = await this.pickMinutes(
-					ctx,
-					kind === "interval" ? "Checkpoint interval" : "Previous-activity threshold",
-					kind === "interval",
+				return buildShowReport({
+					anchor: this.state.anchor,
+					revisions: this.state.revisions,
+					decisions: [...this.state.decisionsByCarrierId.values()],
+					nowMs,
+				});
+			},
+			commit: (action, scope, value) => {
+				const effective = this.currentEffectivePolicy();
+				const config = this.loadCurrentConfig(ctx);
+				const change = this.computeChange(action, config, value);
+				if (change.error) return { error: change.error };
+				return this.commitChange(
+					effective,
+					change,
+					action,
+					scope,
+					scope === "global" ? paths.globalPath : paths.projectPath,
 				);
-				if (!picked) continue;
-				const scope = await this.pickScope(ctx, paths);
-				if (scope === undefined) continue;
-				const change =
-					picked.kind === "every"
-						? this.computeChange("every", config, { every: true })
-						: this.computeChange(kind, config, { minutes: picked.minutes });
-				if (change.error) {
-					ctx.ui.notify(change.error, "error");
-					continue;
-				}
-				this.commitChange(effective, change, kind, scope, scope === "global" ? paths.globalPath : paths.projectPath, ctx);
-				if (kind === "interval") {
-					ctx.ui.notify(`Note: previous-activity threshold remains ${config.previousActivityThresholdMinutes} minutes (independent of the interval)`);
-				}
-			}
-		}
+			},
+		});
 	}
 
 	async handleTimeConfig(args: string, ctx: ExtensionCommandContext): Promise<void> {
@@ -610,7 +537,12 @@ export class TimeContextRuntime {
 			ctx.ui.notify(change.error, "error");
 			return;
 		}
-		this.commitChange(effective, change, action, scope, targetPath, ctx);
+		const result = this.commitChange(effective, change, action, scope, targetPath);
+		if ("error" in result) {
+			ctx.ui.notify(result.error, "error");
+			return;
+		}
+		ctx.ui.notify(result.summary);
 	}
 }
 
