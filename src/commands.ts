@@ -46,12 +46,12 @@ export interface ParseResult {
 }
 
 const USAGE = [
-	"用法：",
-	"  /time-config              交互式配置",
-	"  /time-config show         查看当前配置与最近时间戳",
-	"  /time-config interval <分钟> [-g]",
-	"  /time-config every [-g]   切换“每条消息都附着”模式",
-	"  /time-config threshold <分钟> [-g]",
+	"Usage:",
+	"  /time-config              Interactive configuration",
+	"  /time-config show         Show current config and recent timestamps",
+	"  /time-config interval <minutes> [-g]",
+	"  /time-config every [-g]   Toggle \"stamp every message\" mode",
+	"  /time-config threshold <minutes> [-g]",
 	"  /time-config tz <IANA|local|UTC> [-g]",
 ].join("\n");
 
@@ -61,23 +61,23 @@ export function parseTimeConfigArgs(input: string): ParseResult {
 	const positional = tokens.filter((token) => token !== "-g" && token !== "--global");
 	const unknownFlags = tokens.filter((token) => token.startsWith("-") && !(token === "-g" || token === "--global"));
 	if (unknownFlags.length > 0) {
-		return { error: `未知参数 ${unknownFlags.join(" ")}\n\n${USAGE}` };
+		return { error: `Unknown flag ${unknownFlags.join(" ")}\n\n${USAGE}` };
 	}
 	const action = (positional[0] ?? "show") as ParsedTimeConfigArgs["action"];
 	const value = positional[1];
 	switch (action) {
 		case "show":
 		case "every":
-			if (value !== undefined) return { error: `${action} 不需要参数\n\n${USAGE}` };
+			if (value !== undefined) return { error: `${action} takes no arguments\n\n${USAGE}` };
 			return { args: { action, global: globalFlags.length > 0 } };
 		case "interval":
 		case "threshold":
 		case "tz":
-			if (!value) return { error: `${action} 需要一个参数\n\n${USAGE}` };
-			if (positional.length > 2) return { error: `参数过多\n\n${USAGE}` };
+			if (!value) return { error: `${action} requires an argument\n\n${USAGE}` };
+			if (positional.length > 2) return { error: `Too many arguments\n\n${USAGE}` };
 			return { args: { action, value, global: globalFlags.length > 0 } };
 		default:
-			return { error: `未知子命令 “${positional[0]}”\n\n${USAGE}` };
+			return { error: `Unknown subcommand \"${positional[0]}\"\n\n${USAGE}` };
 	}
 }
 
@@ -115,8 +115,8 @@ export interface TimeDisplayInfo {
 
 function intervalLabel(policy: TimePolicyV1): string {
 	return policy.stampEveryMessage
-		? "每条消息"
-		: `${Math.round(policy.checkpointIntervalMs / 60_000)} 分钟`;
+		? "every message"
+		: `${Math.round(policy.checkpointIntervalMs / 60_000)} minutes`;
 }
 
 export function nextCheckpointAt(nowMs: number, anchor: SessionAnchorV1, policy: TimePolicyV1): number | undefined {
@@ -131,35 +131,35 @@ export function buildShowReport(info: TimeDisplayInfo): string {
 	const revision = resolvePolicy(anchor, revisions, nowMs);
 	const fromRevision = revision !== anchor.policy;
 	const lines: string[] = [
-		"pi-time-context 当前生效配置：",
-		`  检查点间隔：${intervalLabel(revision)}`,
-		`  上一活动阈值：${Math.round(revision.previousActivityThresholdMs / 60_000)} 分钟`,
-		`  时区：${revision.timeZone}`,
+		"pi-time-context active configuration:",
+		`  Checkpoint interval: ${intervalLabel(revision)}`,
+		`  Previous-activity threshold: ${Math.round(revision.previousActivityThresholdMs / 60_000)} minutes`,
+		`  Time zone: ${revision.timeZone}`,
 	];
 	const next = nextCheckpointAt(nowMs, anchor, revision);
 	lines.push(
 		!isValidEpochMs(nowMs)
-			? "  下次检查点：时钟无效"
+			? "  Next checkpoint: invalid clock"
 			: next === undefined
-				? "  模式：每条消息都附着时间戳"
-				: `  下次检查点：${formatClockMinute(next, revision.timeZone)}`,
+				? "  Mode: stamping every message"
+				: `  Next checkpoint: ${formatClockMinute(next, revision.timeZone)}`,
 	);
 	lines.push(
 		fromRevision
-			? `  生效来源：会话内修订（${formatLocalMinute(
+			? `  Source: in-session revision (since ${formatLocalMinute(
 					revisions.filter((item) => item.effectiveFromMs <= nowMs).at(-1)?.effectiveFromMs ?? nowMs,
 					revision.timeZone,
-				)} 起）`
-			: "  生效来源：会话锚点（启动时文件配置）",
+				)}`
+			: "  Source: session anchor (config at startup)",
 	);
 	const stamped = decisions.filter((decision) => decision.stamp).slice(-5).reverse();
 	if (stamped.length > 0) {
-		lines.push("最近时间戳：");
+		lines.push("Recent timestamps:");
 		for (const decision of stamped) {
 			const elapsed = decision.stamp?.elapsedMinutes;
 			lines.push(
 				`  ${formatLocalMinute(decision.firstSentAtMs, revision.timeZone)}${
-					elapsed !== undefined ? ` · 距上次活动 ${elapsed} 分钟` : ""
+					elapsed !== undefined ? ` · idle for ${elapsed} minutes` : ""
 				}`,
 			);
 		}
@@ -172,5 +172,5 @@ export function statusLine(nowMs: number, anchor: SessionAnchorV1, policy: TimeP
 	const next = nextCheckpointAt(nowMs, anchor, policy);
 	const time = formatClockMinute(nowMs, policy.timeZone);
 	if (next === undefined) return time;
-	return `${time} · 下次检查点 ${formatClockMinute(next, policy.timeZone)}`;
+	return `${time} · next checkpoint ${formatClockMinute(next, policy.timeZone)}`;
 }

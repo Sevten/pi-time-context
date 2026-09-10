@@ -5,9 +5,9 @@ export function formatElapsedMinutes(totalMinutes: number): string {
 	const safeMinutes = Math.max(0, Math.trunc(totalMinutes));
 	const hours = Math.floor(safeMinutes / 60);
 	const minutes = safeMinutes % 60;
-	if (hours === 0) return `${minutes}分钟`;
-	if (minutes === 0) return `${hours}小时`;
-	return `${hours}小时${minutes}分钟`;
+	if (hours === 0) return `${minutes}m`;
+	if (minutes === 0) return `${hours}h`;
+	return `${hours}h${minutes}m`;
 }
 
 export function renderDecision(decision: CarrierDecisionV1, policy: TimePolicyV1): string | undefined {

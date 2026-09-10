@@ -30,10 +30,10 @@ describe("parseTimeConfigArgs", () => {
 	});
 
 	it("rejects unknown actions, missing values, and unknown flags", () => {
-		expect(parseTimeConfigArgs("bogus").error).toContain("未知子命令");
-		expect(parseTimeConfigArgs("interval").error).toContain("需要一个参数");
-		expect(parseTimeConfigArgs("interval 15 -x").error).toContain("未知参数");
-		expect(parseTimeConfigArgs("show 3").error).toContain("不需要参数");
+		expect(parseTimeConfigArgs("bogus").error).toContain("Unknown subcommand");
+		expect(parseTimeConfigArgs("interval").error).toContain("requires an argument");
+		expect(parseTimeConfigArgs("interval 15 -x").error).toContain("Unknown flag");
+		expect(parseTimeConfigArgs("show 3").error).toContain("takes no arguments");
 	});
 });
 
@@ -94,9 +94,9 @@ describe("buildShowReport and widgetLines", () => {
 
 	it("labels the effective source and shows next checkpoint", () => {
 		const report = buildShowReport({ anchor: base, revisions: [rev], decisions: [], nowMs: T0 + 2000 });
-		expect(report).toContain("15 分钟");
-		expect(report).toContain("会话内修订");
-		expect(report).toContain("下次检查点");
+		expect(report).toContain("15 minutes");
+		expect(report).toContain("in-session revision");
+		expect(report).toContain("Next checkpoint");
 	});
 
 	it("labels every-message mode", () => {
@@ -111,15 +111,15 @@ describe("buildShowReport and widgetLines", () => {
 			() => {},
 		)!;
 		const report = buildShowReport({ anchor: base, revisions: [every], decisions: [], nowMs: T0 + 2000 });
-		expect(report).toContain("每条消息都附着时间戳");
+		expect(report).toContain("stamping every message");
 	});
 
 	it("renders the status line for both modes", () => {
 		const status = statusLine(T0 + 60_000, base, base.policy);
 		expect(status).not.toContain("⏱");
-		expect(status).toContain("下次检查点");
+		expect(status).toContain("next checkpoint");
 		const everyStatus = statusLine(T0 + 60_000, base, { ...base.policy, stampEveryMessage: true });
-		expect(everyStatus).not.toContain("下次检查点");
+		expect(everyStatus).not.toContain("next checkpoint");
 		expect(everyStatus).toMatch(/\d{2}:\d{2}$/);
 	});
 });

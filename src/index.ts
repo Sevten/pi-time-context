@@ -379,7 +379,7 @@ export class TimeContextRuntime {
 	async handleTimeConfig(args: string, ctx: ExtensionCommandContext): Promise<void> {
 		const parsed = parseTimeConfigArgs(args);
 		if (!parsed.args) {
-			ctx.ui.notify(parsed.error ?? "参数解析失败", "error");
+			ctx.ui.notify(parsed.error ?? "Failed to parse arguments", "error");
 			return;
 		}
 		const { action, global } = parsed.args;
@@ -391,7 +391,7 @@ export class TimeContextRuntime {
 		if (action === "show") {
 			const nowMs = readClock(this.clock);
 			if (!this.state.anchor || nowMs === undefined) {
-				ctx.ui.notify("pi-time-context 尚未激活（等待第一条用户消息）");
+				ctx.ui.notify("pi-time-context is not yet active (waiting for the first user message)");
 				return;
 			}
 			ctx.ui.notify(
@@ -407,7 +407,7 @@ export class TimeContextRuntime {
 
 		const effective = this.currentEffectivePolicy();
 		if (!effective) {
-			ctx.ui.notify("pi-time-context 尚未激活（等待第一条用户消息），修改将在新会话生效", "warning");
+			ctx.ui.notify("pi-time-context is not yet active (waiting for the first user message); changes will take effect in a new session", "warning");
 			return;
 		}
 		const currentConfig: TimeContextConfig = {
@@ -428,7 +428,7 @@ export class TimeContextRuntime {
 		} else if (action === "interval") {
 			const minutes = parsed.args.value !== undefined ? parseIntervalValue(parsed.args.value) : undefined;
 			if (minutes === undefined) {
-				ctx.ui.notify("间隔必须是 1 到 10080 之间的整数分钟", "error");
+				ctx.ui.notify("Interval must be an integer between 1 and 10080 minutes", "error");
 				return;
 			}
 			patch = { checkpointIntervalMinutes: minutes, stampEveryMessage: false };
@@ -440,7 +440,7 @@ export class TimeContextRuntime {
 		} else if (action === "threshold") {
 			const minutes = parsed.args.value !== undefined ? parseIntervalValue(parsed.args.value) : undefined;
 			if (minutes === undefined) {
-				ctx.ui.notify("阈值必须是 1 到 10080 之间的整数分钟", "error");
+				ctx.ui.notify("Threshold must be an integer between 1 and 10080 minutes", "error");
 				return;
 			}
 			patch = { previousActivityThresholdMinutes: minutes };
@@ -448,7 +448,7 @@ export class TimeContextRuntime {
 		} else {
 			const requested = parsed.args.value ?? "";
 			if (!resolveTimeZone(requested)) {
-				ctx.ui.notify(`无法识别的时区 “${requested}”（可用 local、UTC 或 IANA 名称）`, "error");
+				ctx.ui.notify(`Unrecognized time zone \"${requested}\" (use local, UTC, or an IANA name)`, "error");
 				return;
 			}
 			patch = { timeZone: requested };
@@ -458,19 +458,19 @@ export class TimeContextRuntime {
 		try {
 			writeConfigLayer(targetPath, patch);
 		} catch (error) {
-			ctx.ui.notify(`写入 ${targetPath} 失败：${error instanceof Error ? error.message : String(error)}`, "error");
+			ctx.ui.notify(`Failed to write ${targetPath}: ${error instanceof Error ? error.message : String(error)}`, "error");
 			return;
 		}
 		this.appendRevision(nextPolicy, scope);
 		const summary =
 			action === "every"
-				? `每条消息附着时间戳：${nextPolicy.stampEveryMessage ? "开" : "关"}`
+				? `Stamp every message: ${nextPolicy.stampEveryMessage ? "on" : "off"}`
 				: action === "tz"
-					? `时区：${nextPolicy.timeZone}`
+					? `Time zone: ${nextPolicy.timeZone}`
 					: action === "interval"
-						? `检查点间隔：${nextPolicy.stampEveryMessage ? "每条消息" : `${Math.round(nextPolicy.checkpointIntervalMs / 60_000)} 分钟`}`
-						: `上一活动阈值：${Math.round(nextPolicy.previousActivityThresholdMs / 60_000)} 分钟`;
-		ctx.ui.notify(`${summary}（已写入 ${scope === "global" ? "全局" : "项目"}层，对后续消息生效）`);
+						? `Checkpoint interval: ${nextPolicy.stampEveryMessage ? "every message" : `${Math.round(nextPolicy.checkpointIntervalMs / 60_000)} minutes`}`
+						: `Previous-activity threshold: ${Math.round(nextPolicy.previousActivityThresholdMs / 60_000)} minutes`;
+		ctx.ui.notify(`${summary} (written to the ${scope === "global" ? "global" : "project"} layer; applies to subsequent messages)`);
 		this.updateWidget(ctx);
 	}
 }
@@ -479,7 +479,7 @@ export function registerTimeContextExtension(pi: ExtensionAPI, options: RuntimeO
 	const runtime = new TimeContextRuntime(pi, options);
 	registerDecisionRenderer(pi);
 	pi.registerCommand("time-config", {
-		description: "查看/修改 pi-time-context 配置（间隔、阈值、时区、每条消息模式）",
+		description: "View/modify pi-time-context configuration (interval, threshold, time zone, every-message mode)",
 		handler: (args, ctx) => runtime.handleTimeConfig(args, ctx),
 	});
 	pi.on("session_start", (event, ctx) => runtime.onSessionStart(event, ctx));

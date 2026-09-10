@@ -14,14 +14,14 @@ describe("renderer", () => {
 			stamp: { renderVersion: 1, elapsedMinutes: 135 },
 		};
 		expect(renderDecision(decision, { ...anchor().policy, timeZone: "Asia/Shanghai" })).toBe(
-			"sent_at: 2026-08-22 14:15 +08:00\nelapsed_since_last_activity: 2小时15分钟",
+			"sent_at: 2026-08-22 14:15 +08:00\nelapsed_since_last_activity: 2h15m",
 		);
 	});
 
 	it("renders elapsed values without redundant components", () => {
-		expect(formatElapsedMinutes(35)).toBe("35分钟");
-		expect(formatElapsedMinutes(120)).toBe("2小时");
-		expect(formatElapsedMinutes(135)).toBe("2小时15分钟");
+		expect(formatElapsedMinutes(35)).toBe("35m");
+		expect(formatElapsedMinutes(120)).toBe("2h");
+		expect(formatElapsedMinutes(135)).toBe("2h15m");
 	});
 
 	it("renders no text for a null decision", () => {

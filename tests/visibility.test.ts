@@ -23,12 +23,12 @@ describe("decisionDisplayText", () => {
 			decision({ renderVersion: 1, previousActivityKey: "assistant:a", elapsedMinutes: 135 }, 0),
 		)!;
 		expect(text).toContain("sent_at");
-		expect(text).toContain("2小时15分钟");
+		expect(text).toContain("2h15m");
 	});
 
 	it("omits the elapsed segment when absent", () => {
 		const text = decisionDisplayText(decision({ renderVersion: 1 }))??"";
 		expect(text).toContain("sent_at");
-		expect(text).not.toContain("距上次活动");
+		expect(text).not.toContain("Idle for");
 	});
 });
