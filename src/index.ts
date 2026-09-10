@@ -303,7 +303,7 @@ export class TimeContextRuntime {
 				event.messages,
 				associations,
 				this.state.decisionsByCarrierId,
-				anchor.policy,
+				anchor,
 			),
 		};
 	}

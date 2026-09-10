@@ -1,80 +1,131 @@
 # pi-time-context
 
-`pi-time-context` 是一个 Pi 扩展，用确定、可重放的方式向模型提供现实时间。它不修改 system prompt，也不修改 Pi 持久化的原始 user、assistant 或 toolResult 消息。
+Deterministic, cache-stable wall-clock context for Pi conversations.
 
-## 兼容性
+`pi-time-context` is a Pi extension that gives language models an explicit sense of real-world time. It prepends a small timestamp block to selected outbound user and tool-result messages without changing the system prompt or the messages stored in the Pi session.
 
-- 目标版本：`@earendil-works/pi-coding-agent@0.80.3`
-- Node.js：`>=22.19.0`
+A model may receive context like this:
 
-实现只使用 Pi 0.80.3 已有的 `context`、消息生命周期、工具生命周期和 session 生命周期事件。
+```text
+sent_at: 2026-08-22 14:15 +08:00
+elapsed_since_last_activity: 2小时15分钟
 
-## 安装
-
-从本地目录安装：
-
-```bash
-pi install /path/to/pi-time-context
+Your original message or tool result...
 ```
 
-仅在当前项目启用：
+The extension is designed for long-running, resumed, forked, and provider-retried conversations where timestamps must remain deterministic instead of changing whenever context is rebuilt.
 
-```bash
-pi install -l /path/to/pi-time-context
-```
+## Highlights
 
-发布到 npm 后可使用：
+- **Real wall-clock context** — exposes an absolute local time with a numeric UTC offset.
+- **Deterministic replay** — freezes each timestamp decision before the message is first sent and reuses it on retries and reloads.
+- **Cache-friendly behavior** — timestamps are added at fixed checkpoints rather than to every message.
+- **Lifecycle-aware elapsed time** — can tell the model how long it has been since the previous assistant or tool activity completed.
+- **Session-safe injection** — modifies only the outbound context copy; persisted user, assistant, and tool-result messages remain untouched.
+- **Branch-aware recovery** — restores decisions across resume, reload, fork, clone, and tree navigation.
+- **Privacy-conscious persistence** — does not copy message bodies, tool arguments, or tool output into extension metadata.
+- **No background work** — starts no timers, polling loops, or model-callable tools.
+
+## Requirements
+
+- Node.js `>=22.19.0`
+- Built and tested against `@earendil-works/pi-coding-agent@0.80.3`
+
+## Installation
+
+Install the package from npm:
 
 ```bash
 pi install npm:@sevten/pi-time-context
 ```
 
-也可以不安装，直接试运行：
+Install it only for the current project:
+
+```bash
+pi install -l npm:@sevten/pi-time-context
+```
+
+To install a local checkout instead:
+
+```bash
+pi install /path/to/pi-time-context
+```
+
+Or enable a local checkout for a single run without installing it:
 
 ```bash
 pi -e /path/to/pi-time-context
 ```
 
-Pi package 会从 `src/index.ts` 加载扩展。
+Pi discovers the extension through the `pi.extensions` entry in `package.json`. No command or prompt setup is required after installation.
 
-## 行为
+## How it works
 
-新会话第一条 user 消息真正被 Pi agent loop 处理时，扩展冻结会话锚点 T0，并在该消息首次发送给模型的副本中追加：
+### Session anchor
+
+When Pi processes the first user message in a new session, the extension freezes a session anchor (`T0`). The outbound copy of that first message receives a baseline timestamp:
 
 ```text
 sent_at: 2026-08-22 14:15 +08:00
 ```
 
-默认检查点固定为 `T0 + 30m`、`T0 + 60m`、`T0 + 90m`。扩展不启动定时器；只有新的 user 或 toolResult 即将发送给模型时才检查是否跨入新检查区间。一次跨过多个区间只追加一个时间戳。
+The internal name `T0` is never shown to the model.
 
-当检查点已到，并且当前 carrier 距离上一 assistant 或工具活动完成时间严格超过阈值时，扩展追加第二行：
+### Checkpoints
+
+By default, the next checkpoints are `T0 + 30m`, `T0 + 60m`, `T0 + 90m`, and so on. The extension does not wake up when a checkpoint passes. It checks the clock only when a new user message or tool result is about to be sent to the model.
+
+If one or more checkpoint intervals have passed, the next eligible message receives one timestamp block. Skipping several intervals does not produce several timestamps.
+
+### Elapsed activity
+
+When a checkpoint is due, the extension compares the message's send time with the completion time of the previous assistant or tool activity. If the gap is strictly greater than the configured threshold, it adds a second line:
 
 ```text
 sent_at: 2026-08-22 14:15 +08:00
 elapsed_since_last_activity: 2小时15分钟
 ```
 
-时间决策在 carrier 第一次发送前持久化。有时间戳和无时间戳的决策都会记录，因此 provider retry 不会给同一 carrier 动态补写时间。`/resume`、`/reload`、`/fork`、`/clone` 和 `/tree` 会按当前分支恢复相同决策。
+Elapsed durations are rounded to minutes. The current renderer uses the compact Chinese units `小时` (hours) and `分钟` (minutes).
 
-已有历史但没有扩展锚点的会话不会被回填。扩展在接管后的第一个新 carrier 上建立 `legacy_activation` 迁移锚点，并只追加普通 `sent_at`。
+### Injection location
 
-## 配置
+The timestamp is inserted as an independent text content block before the original content:
 
-全局配置：
+```text
+[timestamp text block]
+[original text/image content blocks]
+```
+
+This preserves the original content blocks and their order. The extension never adds a separate message between an assistant tool call and its tool result.
+
+### Compaction
+
+When compaction removes the session's first stamped message from the context, the model would otherwise lose the session start time. The extension detects a compaction summary at the head of the context and prepends a `session_started_at` line (rendered from the persisted session anchor) to the summary text on the outbound copy only. Messages after the summary continue to receive their normal `sent_at` stamps.
+
+## Configuration
+
+The extension works without a configuration file. Its defaults are:
+
+| Option | Default | Description |
+| --- | ---: | --- |
+| `checkpointIntervalMinutes` | `30` | Minutes between timestamp checkpoints. |
+| `previousActivityThresholdMinutes` | `30` | Minimum activity gap before adding `elapsed_since_last_activity`. The comparison is strictly greater than this value. |
+| `timeZone` | `"local"` | Time zone used to render `sent_at`. |
+
+Create a global configuration file at:
 
 ```text
 ~/.pi/agent/pi-time-context.json
 ```
 
-项目覆盖（默认配置目录名为 `.pi`）：
+Or add a project-level override at:
 
 ```text
 <project>/.pi/pi-time-context.json
 ```
 
-扩展遵循 Pi 的项目信任状态：项目未受信任时不会读取项目配置，只使用全局配置和默认值。项目配置目录通过 Pi 的 `CONFIG_DIR_NAME` 解析，兼容使用其他配置目录名的发行版。
-
-示例：
+Example:
 
 ```json
 {
@@ -85,17 +136,34 @@ elapsed_since_last_activity: 2小时15分钟
 }
 ```
 
-- 项目字段覆盖全局同名字段。
-- 两个分钟值必须是 `1` 到 `10080` 之间的有限正数。
-- `timeZone` 支持 `local`、`UTC` 或运行时 `Intl` 支持的 IANA 时区，例如 `Asia/Shanghai`。
-- `local` 在创建锚点时解析为具体 IANA 时区。
-- `showInjectedTime` 默认为 `false`；设为 `true` 后，每次实际注入都会在前端显示一次通知，但仍不会修改聊天消息正文。修改后执行 `/reload` 即可对当前会话生效。
-- 策略随会话锚点冻结；修改配置只影响尚未创建锚点的会话。
-- 非法字段和未知字段会告警；非法值回退到上一层有效值或默认值，不阻止扩展启动。
+### Configuration rules
 
-## 持久化与隐私
 
-扩展写入三种不进入模型上下文的 custom entry：
+- Project values override global values field by field.
+- Interval values must be finite numbers from `1` through `10080`.
+- `timeZone` accepts `"local"`, `"UTC"`, or an IANA time zone supported by the runtime, such as `"Asia/Shanghai"` or `"America/New_York"`.
+- `"local"` is resolved to a concrete IANA time zone when the session anchor is created.
+- The resolved policy is frozen with the session anchor. Configuration changes affect only sessions that have not created an anchor yet.
+- Invalid or unknown fields produce warnings and fall back to the previous valid configuration layer or the defaults.
+- `showInjectedTime` defaults to `false`; when set to `true`, every actual injection shows one notification in the UI while chat message bodies remain untouched. Run `/reload` after changing it for the current session.
+- Project configuration is ignored while Pi considers the project untrusted.
+- The project configuration directory follows Pi's `CONFIG_DIR_NAME`; `.pi` is the default.
+
+## Deterministic sessions and retries
+
+Before an eligible message is first sent to the model, the extension persists either a stamped decision or an explicit no-stamp decision. Rebuilding context therefore cannot add a new timestamp to a message that was originally sent without one, and an existing timestamp cannot drift with the current clock or configuration.
+
+This behavior applies to provider retries and to session recovery through `/resume`, `/reload`, `/fork`, `/clone`, and `/tree`.
+
+For an existing session created before the extension was enabled:
+
+- historical messages are not modified or backfilled;
+- the first new eligible message establishes a migration anchor;
+- that message receives a normal `sent_at` value, not a false conversation-start marker.
+
+## Persistence and privacy
+
+The extension stores its state in three Pi custom-entry types that are excluded from model context:
 
 ```text
 pi-time-context/session-anchor
@@ -103,29 +171,40 @@ pi-time-context/activity-facts
 pi-time-context/carrier-decision
 ```
 
-这些 entry 只保存 epoch 毫秒、消息 entry ID、toolCallId、错误标记、策略快照和渲染决策。不会复制消息正文、工具参数或工具输出。
+These records contain only the data required for deterministic recovery, including epoch timestamps, session-message entry IDs, tool-call IDs, error flags, the frozen policy, and rendering decisions.
 
-模型可见的绝对时间固定为 `YYYY-MM-DD HH:mm ±HH:mm`，包含数字 UTC 偏移但不包含秒、内部 ID 或上一活动的绝对完成时间。系统时钟回拨时仍可发送当前绝对时间，但会省略负的 elapsed。
+They do **not** duplicate:
 
-## 缓存不变量
+- user or assistant message bodies;
+- tool arguments;
+- tool output.
 
-- 不修改 system prompt。
-- 不回改历史 assistant。
-- 不修改 session 中的原始消息。
-- 只在 `context` 提供的出站消息副本开头插入独立的时间 text block。
-- 已记录的 stamped/null 决策和显示时区不会因重试、重载或配置变化而重算。
-- 不在 assistant tool call 与 toolResult 之间插入额外消息。
+Additional invariants:
 
-## 限制
+- the system prompt is never modified;
+- historical assistant messages are never annotated;
+- original session messages are never rewritten;
+- only outbound context copies receive timestamp blocks;
+- a system-clock rollback still permits an absolute timestamp, but suppresses a negative elapsed duration.
 
-- 不提供模型可调用的时间工具。
-- 不进行独立的跨自然日检测；`sent_at` 已包含完整日期。
-- 不提供定时唤醒、后台轮询或 TUI 时间面板。
-- 无持久 session 文件时可正常运行，但不保证跨进程恢复。
+## Limitations
 
-## 开发验证
+- This extension provides context, not a model-callable clock tool.
+- It does not wake the agent, schedule work, or poll in the background.
+- It does not provide TUI timestamps, dashboards, or analytics.
+- It does not perform a separate calendar-day transition check because `sent_at` already includes the full date.
+- Cross-process replay requires a persistent Pi session file.
+- Elapsed-duration labels currently use Chinese hour/minute units.
+
+## Development
 
 ```bash
-npm install --ignore-scripts
+npm ci --ignore-scripts
 npm run validate
 ```
+
+`npm run validate` runs the TypeScript check, the Vitest suite, and an npm package dry run.
+
+## License
+
+[MIT](LICENSE)

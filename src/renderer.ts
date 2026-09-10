@@ -1,5 +1,5 @@
 import { formatLocalMinute } from "./clock.js";
-import type { CarrierDecisionV1, TimePolicyV1 } from "./types.js";
+import type { CarrierDecisionV1, SessionAnchorV1, TimePolicyV1 } from "./types.js";
 
 export function formatElapsedMinutes(totalMinutes: number): string {
 	const safeMinutes = Math.max(0, Math.trunc(totalMinutes));
@@ -19,4 +19,9 @@ export function renderDecision(decision: CarrierDecisionV1, policy: TimePolicyV1
 		lines.push(`elapsed_since_last_activity: ${formatElapsedMinutes(decision.stamp.elapsedMinutes)}`);
 	}
 	return lines.join("\n");
+}
+
+export function renderSessionStart(anchor: SessionAnchorV1): string | undefined {
+	if (anchor.policy.renderVersion !== 1) return undefined;
+	return `session_started_at: ${formatLocalMinute(anchor.t0Ms, anchor.policy.timeZone)}`;
 }
