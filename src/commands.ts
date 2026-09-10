@@ -167,4 +167,16 @@ export function buildShowReport(info: TimeDisplayInfo): string {
 	return lines.join("\n");
 }
 
+export function buildInactiveShowReport(loadConfig: () => TimeContextConfig): string {
+	const config = loadConfig();
+	return [
+		"pi-time-context is not yet active (waiting for the first user message).",
+		"Configuration that will be frozen into the session anchor:",
+		`  Checkpoint interval: ${config.checkpointIntervalMinutes} minutes`,
+		`  Previous-activity threshold: ${config.previousActivityThresholdMinutes} minutes`,
+		`  Time zone: ${config.timeZone}`,
+		`  Stamp every message: ${config.stampEveryMessage ? "on" : "off"}`,
+	].join("\n");
+}
+
 

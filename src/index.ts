@@ -14,6 +14,7 @@ import {
 	freezePolicy,
 	loadConfig,
 } from "./config.js";
+import { buildInactiveShowReport } from "./commands.js";
 import {
 	buildShowReport,
 	configPaths,
@@ -365,8 +366,14 @@ export class TimeContextRuntime {
 
 		if (action === "show") {
 			const nowMs = readClock(this.clock);
-			if (!this.state.anchor || nowMs === undefined) {
-				ctx.ui.notify("pi-time-context is not yet active (waiting for the first user message)");
+			if (nowMs === undefined || !this.state.anchor) {
+				ctx.ui.notify(
+					buildInactiveShowReport(() => {
+						const loaded = this.configLoader(ctx.cwd, ctx.isProjectTrusted());
+						for (const warning of loaded.warnings) this.warn(warning);
+						return loaded.config;
+					}),
+				);
 				return;
 			}
 			ctx.ui.notify(
@@ -381,25 +388,28 @@ export class TimeContextRuntime {
 		}
 
 		const effective = this.currentEffectivePolicy();
-		if (!effective) {
-			ctx.ui.notify("pi-time-context is not yet active (waiting for the first user message); changes will take effect in a new session", "warning");
-			return;
+		let currentConfig: TimeContextConfig;
+		if (effective) {
+			currentConfig = {
+				checkpointIntervalMinutes: Math.round(effective.policy.checkpointIntervalMs / 60_000),
+				previousActivityThresholdMinutes: Math.round(effective.policy.previousActivityThresholdMs / 60_000),
+				timeZone: effective.policy.timeZone,
+				stampEveryMessage: effective.policy.stampEveryMessage,
+			};
+		} else {
+			const loaded = this.configLoader(ctx.cwd, ctx.isProjectTrusted());
+			for (const warning of loaded.warnings) this.warn(warning);
+			currentConfig = loaded.config;
 		}
-		const currentConfig: TimeContextConfig = {
-			checkpointIntervalMinutes: Math.round(effective.policy.checkpointIntervalMs / 60_000),
-			previousActivityThresholdMinutes: Math.round(effective.policy.previousActivityThresholdMs / 60_000),
-			timeZone: effective.policy.timeZone,
-			stampEveryMessage: effective.policy.stampEveryMessage,
-		};
 		const scope = global ? "global" : "project";
 		const targetPath = global ? paths.globalPath : paths.projectPath;
 
 		let patch: Partial<TimeContextConfig>;
 		let nextPolicy: TimePolicyV1;
 		if (action === "every") {
-			const enabled = !effective.policy.stampEveryMessage;
+			const enabled = !currentConfig.stampEveryMessage;
 			patch = { stampEveryMessage: enabled };
-			nextPolicy = { ...effective.policy, stampEveryMessage: enabled };
+			nextPolicy = { ...freezePolicy(currentConfig, (message) => this.warn(message)), stampEveryMessage: enabled };
 		} else if (action === "interval") {
 			const minutes = parsed.args.value !== undefined ? parseIntervalValue(parsed.args.value) : undefined;
 			if (minutes === undefined) {
@@ -408,7 +418,7 @@ export class TimeContextRuntime {
 			}
 			patch = { checkpointIntervalMinutes: minutes, stampEveryMessage: false };
 			nextPolicy = {
-				...effective.policy,
+				...freezePolicy(currentConfig, (message) => this.warn(message)),
 				checkpointIntervalMs: minutes * 60_000,
 				stampEveryMessage: false,
 			};
@@ -419,7 +429,10 @@ export class TimeContextRuntime {
 				return;
 			}
 			patch = { previousActivityThresholdMinutes: minutes };
-			nextPolicy = { ...effective.policy, previousActivityThresholdMs: minutes * 60_000 };
+			nextPolicy = {
+				...freezePolicy(currentConfig, (message) => this.warn(message)),
+				previousActivityThresholdMs: minutes * 60_000,
+			};
 		} else {
 			const requested = parsed.args.value ?? "";
 			if (!resolveTimeZone(requested)) {
@@ -427,7 +440,10 @@ export class TimeContextRuntime {
 				return;
 			}
 			patch = { timeZone: requested };
-			nextPolicy = { ...effective.policy, timeZone: resolveTimeZone(requested) ?? effective.policy.timeZone };
+			nextPolicy = {
+				...freezePolicy(currentConfig, (message) => this.warn(message)),
+				timeZone: resolveTimeZone(requested) ?? "UTC",
+			};
 		}
 
 		try {
@@ -436,7 +452,7 @@ export class TimeContextRuntime {
 			ctx.ui.notify(`Failed to write ${targetPath}: ${error instanceof Error ? error.message : String(error)}`, "error");
 			return;
 		}
-		this.appendRevision(nextPolicy, scope);
+		if (effective) this.appendRevision(nextPolicy, scope);
 		const summary =
 			action === "every"
 				? `Stamp every message: ${nextPolicy.stampEveryMessage ? "on" : "off"}`
@@ -445,7 +461,10 @@ export class TimeContextRuntime {
 					: action === "interval"
 						? `Checkpoint interval: ${nextPolicy.stampEveryMessage ? "every message" : `${Math.round(nextPolicy.checkpointIntervalMs / 60_000)} minutes`}`
 						: `Previous-activity threshold: ${Math.round(nextPolicy.previousActivityThresholdMs / 60_000)} minutes`;
-		ctx.ui.notify(`${summary} (written to the ${scope === "global" ? "global" : "project"} layer; applies to subsequent messages)`);
+		const scopeNote = effective
+			? `written to the ${scope === "global" ? "global" : "project"} layer; applies to subsequent messages`
+			: `written to the ${scope === "global" ? "global" : "project"} layer; takes effect when the session activates (first user message)`;
+		ctx.ui.notify(`${summary} (${scopeNote})`);
 	}
 }
 
