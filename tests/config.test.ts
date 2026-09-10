@@ -22,7 +22,7 @@ describe("configuration", () => {
 		await mkdir(join(cwd, ".pi"), { recursive: true });
 		await writeFile(
 			join(home, ".pi", "agent", "pi-time-context.json"),
-			JSON.stringify({ checkpointIntervalMinutes: 45, timeZone: "UTC", showInjectedTime: true }),
+			JSON.stringify({ checkpointIntervalMinutes: 45, timeZone: "UTC" }),
 		);
 		await writeFile(
 			join(cwd, ".pi", "pi-time-context.json"),
@@ -34,10 +34,8 @@ describe("configuration", () => {
 			checkpointIntervalMinutes: 45,
 			previousActivityThresholdMinutes: 15,
 			timeZone: "UTC",
-			showInjectedTime: true,
 			stampEveryMessage: false,
 		});
->>>>>>> cc5e27d (Add /time-config command, in-session policy revisions, and stamp-every-message mode)
 		expect(result.warnings).toHaveLength(1);
 		expect(freezePolicy(result.config)).toEqual({
 			checkpointIntervalMs: 45 * 60_000,

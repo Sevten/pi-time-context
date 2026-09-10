@@ -132,13 +132,8 @@ Example:
 {
   "checkpointIntervalMinutes": 30,
   "previousActivityThresholdMinutes": 30,
-<<<<<<< HEAD
   "timeZone": "local",
-  "showInjectedTime": false
-=======
-  "timeZone": "Asia/Shanghai",
   "stampEveryMessage": false
->>>>>>> cc5e27d (Add /time-config command, in-session policy revisions, and stamp-every-message mode)
 }
 ```
 
@@ -171,7 +166,6 @@ Inside Pi you can inspect and change the configuration without leaving the sessi
 - `"local"` is resolved to a concrete IANA time zone when the session anchor is created.
 - The resolved policy is frozen with the session anchor. Configuration changes affect only sessions that have not created an anchor yet.
 - Invalid or unknown fields produce warnings and fall back to the previous valid configuration layer or the defaults.
-- `showInjectedTime` defaults to `false`; when set to `true`, every actual injection shows one notification in the UI while chat message bodies remain untouched. Run `/reload` after changing it for the current session.
 - Project configuration is ignored while Pi considers the project untrusted.
 - The project configuration directory follows Pi's `CONFIG_DIR_NAME`; `.pi` is the default.
 

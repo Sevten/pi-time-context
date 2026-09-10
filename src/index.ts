@@ -76,7 +76,6 @@ export class TimeContextRuntime {
 	private readonly configDirectoryName?: string;
 	private readonly warnings = new Set<string>();
 	private readonly tracker: ActivityTracker;
-	private showInjectedTime = false;
 	private state: RecoveredState = emptyState();
 	private activationCarrierIds = new Set<string>();
 	private baselinePending = false;
@@ -156,18 +155,10 @@ export class TimeContextRuntime {
 		}
 	}
 
-	private notifyInjectedTime(decision: CarrierDecisionV1, ctx: ExtensionContext): void {
-		const policy = this.state.anchor?.policy;
-		if (!this.showInjectedTime || !policy || !decision.stamp) return;
-		const rendered = renderDecision(decision, policy);
-		if (rendered) ctx.ui.notify(`Time context injected:\n${rendered}`, "info");
-	}
-
 	async onSessionStart(event: SessionStartEvent, ctx: ExtensionContext): Promise<void> {
 		this.tracker.reset();
 		this.baselinePending = false;
-		const loaded = this.configLoader(ctx.cwd);
-		this.showInjectedTime = loaded.config.showInjectedTime;
+		const loaded = this.configLoader(ctx.cwd, ctx.isProjectTrusted());
 		for (const warning of loaded.warnings) this.warn(warning);
 		if (event.reason === "fork" && event.previousSessionFile) {
 			await copyForkMetadata({
@@ -301,7 +292,6 @@ export class TimeContextRuntime {
 				this.warn("System clock moved backwards; elapsed_since_last_activity was omitted");
 			}
 			this.persistDecision(result.decision);
-			this.notifyInjectedTime(result.decision, ctx);
 		}
 
 		for (const carrier of eligible) {
