@@ -130,7 +130,7 @@ export class TimeConfigMenuComponent {
 	private hintLine(): string {
 		const t = this.theme;
 		if (this.editing) {
-			return keyHint(t, "enter", "confirm") + t.fg("muted", "  ·  ") + keyHint(t, "esc", "exit menu");
+			return keyHint(t, "enter", "confirm") + t.fg("muted", "  ·  ") + keyHint(t, "esc", "back");
 		}
 		return keyHint(t, "enter", "select") + t.fg("muted", "  ·  ") + keyHint(t, "esc", "back");
 	}
@@ -230,8 +230,12 @@ export class TimeConfigMenuComponent {
 			return;
 		}
 		if (data === "\x1b") {
-			// A single esc exits the menu, even while editing the Custom row.
-			if (this.editing || this.state === "main") {
+			// esc always goes back one level; at the top level it exits.
+			if (this.editing) {
+				this.editing = false;
+				this.inputBuffer = "";
+			}
+			if (this.state === "main") {
 				this.close();
 				return;
 			}
