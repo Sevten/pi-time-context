@@ -1,11 +1,24 @@
 {
   "name": "@sevten/pi-time-context",
   "version": "0.1.0",
-  "description": "Deterministic, cache-stable wall-clock context for Pi conversations",
+  "description": "Pi extension that gives conversations wall-clock context: sparse, deterministic timestamps and idle gaps for user messages and tool results.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Sevten/pi-time-context"
+  },
   "keywords": [
     "pi-package",
     "pi-extension",
-    "time-context"
+    "pi-coding-agent",
+    "time-context",
+    "timestamps",
+    "wall-clock",
+    "llm",
+    "ai-agent",
+    "context-management",
+    "prompt-caching",
+    "developer-tools",
+    "typescript"
   ],
   "type": "module",
   "license": "MIT",
