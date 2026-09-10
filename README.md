@@ -159,6 +159,7 @@ Inside Pi you can inspect and change the configuration without leaving the sessi
 - Every successful change also records an in-session policy revision, so it takes effect immediately for messages that have not been sent yet. Previously stamped messages are never re-rendered.
 - Switching intervals re-buckets checkpoints from the session anchor (T0); the next stamp may therefore arrive sooner or later than the old phase implied.
 - A status widget above the editor shows the current time and the next checkpoint while the extension is active.
+- Stamped messages show a dim inline marker in the chat transcript (for example `⏱ sent_at 14:15 +08:00`), rendered from the persisted decision entries without touching session data.
 - Configuration files are only read when a session anchor is created; editing them mid-session does not affect the running session (use `/time-config` instead).
 
 ### Configuration rules

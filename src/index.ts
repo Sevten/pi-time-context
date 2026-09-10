@@ -34,6 +34,7 @@ import type {
 	ToolExecutionStartEvent,
 } from "./pi-types.js";
 import { carrierEntryIds, isSessionMessageEntry, recoverState } from "./state.js";
+import { registerDecisionRenderer } from "./visibility.js";
 import {
 	ACTIVITY_FACTS_ENTRY,
 	CARRIER_DECISION_ENTRY,
@@ -475,6 +476,7 @@ export class TimeContextRuntime {
 
 export function registerTimeContextExtension(pi: ExtensionAPI, options: RuntimeOptions = {}): TimeContextRuntime {
 	const runtime = new TimeContextRuntime(pi, options);
+	registerDecisionRenderer(pi);
 	pi.registerCommand("time-config", {
 		description: "查看/修改 pi-time-context 配置（间隔、阈值、时区、每条消息模式）",
 		handler: (args, ctx) => runtime.handleTimeConfig(args, ctx),

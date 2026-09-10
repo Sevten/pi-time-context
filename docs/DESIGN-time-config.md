@@ -105,11 +105,9 @@
 
 ## 6. TUI 可视化
 
-### 6.1 决策 entry 渲染器（方案一，受版本限制暂缓）
+### 6.1 决策 entry 渲染器（方案一，已实现）
 
-> **版本限制**：目标版本 `pi-coding-agent@0.80.3` 的 `ExtensionAPI` 不提供 `registerEntryRenderer`（`appendEntry` 的 custom entry 在 TUI 中不渲染）；`registerMessageRenderer` 仅作用于会参与 LLM 上下文的 custom message，不适用。因此本节内联渲染**在当前版本无法实现**，可见性由 6.2 widget 与 6.3 `show` 承担；升级目标版本后按本节原方案补齐。
-
-原方案（待版本支持后实施）：
+自扩展目标版本升级至 `pi-coding-agent@0.85.1` 起可用 `pi.registerEntryRenderer`，本节已实现（`src/visibility.ts`）：
 
 - 在扩展加载时注册：
 
@@ -118,9 +116,10 @@
   ```
 
 - 渲染规则：
-  - `stamp === null`（未盖章的决策）：返回空渲染（不占行），保持聊天流干净；
-  - 有 stamp：单行紧凑文本，如 `⏱ sent_at 14:15 +08:00 · 距上次活动 2小时15分钟`（无 elapsed 时省略后半段），文字用 theme 的 dim 色系；
-  - `expanded` 时附加展示决策的原始数据（checkpointIndex、carrierEntryId 等，dim 色 JSON）。
+  - `stamp === null`（未盖章的决策）：返回 `undefined`（不占行），保持聊天流干净；
+  - 有 stamp：单行紧凑文本 `⏱ sent_at HH:MM +08:00 · 距上次活动 2小时15分钟`（无 elapsed 时省略后半段），文字用 theme 的 `dim` 色；时间戳按本机时区（`local`）渲染；
+  - `expanded` 时附加展示决策标识（carrier 条目 id、checkpoint bucket）；
+  - 数据版本不为 1 的条目不渲染。
 - 渲染仅为显示，`expanded` 之外不引入新数据读取；渲染函数保持同步、开销小。
 - 历史会话 resume / reload 后，已持久化的决策 entry 自动获得同样的渲染。
 
