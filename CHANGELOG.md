@@ -1,40 +1,29 @@
 # Changelog
 
-## Unreleased
+## [0.1.0] - 2026-09-11
 
-### Added
+First release of `pi-time-context`, a Pi agent extension that gives conversations wall-clock context.
 
-- `/time-config` without arguments now opens an interactive menu: pick interval or threshold presets (or a custom value) or change the time zone. Implemented as a single custom TUI component (like pi's built-in menus), so navigating between steps and back does not flash the editor. Non-UI modes keep the usage text.
-- `/time-config` can now be used before the session anchor exists: `show` displays the pending configuration, and change actions write the config layer so the new policy is adopted at activation.
+### Features
 
-### Changed
+- **Wall-clock time context** — each stamped message carries an absolute local time with UTC offset:
 
-- Configuration is now global only (`~/.pi/agent/pi-time-context.json`); project-level config files, the `-g`/`--global` flag, and the config-layer picker in the interactive menu were removed.
-- Default checkpoint interval is now 10 minutes (was 30).
-- Merge `/time-config every` into `/time-config interval <minutes|every>`: one subcommand now controls both the interval and every-message mode, matching the interactive menu.
+  ```text
+  sent_at: 2026-08-22 14:15 +08:00
+  user_idle_for: 2h15m
+  ```
 
-### Fixed
+- **Sparse by default** — a baseline stamp marks the session start; after that, at most one stamp per 10-minute window (configurable), attached to the next outbound user message or tool result. No timers, no background work, and no timestamp noise in model context.
+- **Idle-aware** — when the previous activity ended more than 30 minutes ago (configurable), the stamp also includes `user_idle_for`, telling the model the conversation has a gap.
+- **Every-message mode** — optionally stamp every message instead of using intervals.
+- **Deterministic** — stamps are frozen the first time a message is sent; retries, `/resume`, `/reload`, `/fork`, `/clone`, and `/tree` reproduce identical timestamps, keeping prompt caches warm.
+- **Visible, not intrusive** — the model sees the stamps; you see a dim one-line marker in the chat UI. Session files, stored messages, and the system prompt are never modified, and no message content is ever persisted.
+- **Compaction-safe** — after compaction, a `session_started_at:` line preserves the session start time.
 
+### Configuration
 
+- `/time-config` opens an interactive menu to set the stamping interval (including every-message mode), the idle threshold, and the render time zone (`local`, `UTC`, or any IANA name).
+- Text subcommands: `/time-config show`, `interval <minutes|every>`, `threshold <minutes>`, `tz <IANA|local|UTC>`.
+- Settings persist in `~/.pi/agent/pi-time-context.json` and apply to subsequent messages immediately.
 
-## [Unreleased]
-
-### Added
-
-- Initial deterministic time-context extension implementation.
-- Continuous integration for type checking, tests, and package validation.
-- MIT license file and configuration trust tests.
-
-### Changed
-
-- Rewrite the README as a user-facing guide: motivation, what the model sees, UI walkthrough for `/time-config` and inline transcript markers, and trimmed implementation detail.
-- Resolve the project configuration directory through Pi's `CONFIG_DIR_NAME`.
-- Warn about unknown configuration fields and avoid redundant file existence checks.
-- Use portable local-install paths in the documentation.
-- Prevent superseded provider request timings from leaking into later turns.
-- Avoid rebuilding recovered session state when entries and the active branch are unchanged.
-- Validate the package on both Node.js 22.19 and Node.js 24 in CI.
-
-### Security
-
-- Ignore project-local configuration while Pi project trust is inactive.
+[0.1.0]: https://github.com/Sevten/pi-time-context/releases/tag/v0.1.0
