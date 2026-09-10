@@ -20,24 +20,15 @@ import type {
 	TimePolicyV1,
 } from "./types.js";
 
-export interface GlobalProjectPaths {
-	globalPath: string;
-	projectPath: string;
-}
-
-export function configPaths(cwd: string, options: { homeDirectory?: string; configDirectoryName?: string } = {}): GlobalProjectPaths {
-	return {
-		globalPath: options.homeDirectory
-			? join(options.homeDirectory, ".pi", "agent", "pi-time-context.json")
-			: join(getAgentDir(), "pi-time-context.json"),
-		projectPath: join(cwd, options.configDirectoryName ?? CONFIG_DIR_NAME, "pi-time-context.json"),
-	};
+export function globalConfigPath(options: { homeDirectory?: string } = {}): string {
+	return options.homeDirectory
+		? join(options.homeDirectory, ".pi", "agent", "pi-time-context.json")
+		: join(getAgentDir(), "pi-time-context.json");
 }
 
 export interface ParsedTimeConfigArgs {
 	action: "show" | "interval" | "threshold" | "tz" | "every";
 	value?: string;
-	global: boolean;
 }
 
 export interface ParseResult {
@@ -49,35 +40,35 @@ export const USAGE = [
 	"Usage:",
 	"  /time-config              Interactive configuration",
 	"  /time-config show         Show current config and recent timestamps",
-	"  /time-config interval <minutes> [-g]",
-	"  /time-config every [-g]   Toggle \"stamp every message\" mode",
-	"  /time-config threshold <minutes> [-g]",
-	"  /time-config tz <IANA|local|UTC> [-g]",
+	"  /time-config interval <minutes>",
+	"  /time-config every        Toggle \"stamp every message\" mode",
+	"  /time-config threshold <minutes>",
+	"  /time-config tz <IANA|local|UTC>",
+	"",
+	"Settings are stored in the global config (~/.pi/agent/pi-time-context.json).",
 ].join("\n");
 
 export function parseTimeConfigArgs(input: string): ParseResult {
 	const tokens = input.trim().split(/\s+/).filter(Boolean);
-	const globalFlags = tokens.filter((token) => token === "-g" || token === "--global");
-	const positional = tokens.filter((token) => token !== "-g" && token !== "--global");
-	const unknownFlags = tokens.filter((token) => token.startsWith("-") && !(token === "-g" || token === "--global"));
+	const unknownFlags = tokens.filter((token) => token.startsWith("-"));
 	if (unknownFlags.length > 0) {
 		return { error: `Unknown flag ${unknownFlags.join(" ")}\n\n${USAGE}` };
 	}
-	const action = (positional[0] ?? "show") as ParsedTimeConfigArgs["action"];
-	const value = positional[1];
+	const action = (tokens[0] ?? "show") as ParsedTimeConfigArgs["action"];
+	const value = tokens[1];
 	switch (action) {
 		case "show":
 		case "every":
 			if (value !== undefined) return { error: `${action} takes no arguments\n\n${USAGE}` };
-			return { args: { action, global: globalFlags.length > 0 } };
+			return { args: { action } };
 		case "interval":
 		case "threshold":
 		case "tz":
 			if (!value) return { error: `${action} requires an argument\n\n${USAGE}` };
-			if (positional.length > 2) return { error: `Too many arguments\n\n${USAGE}` };
-			return { args: { action, value, global: globalFlags.length > 0 } };
+			if (tokens.length > 2) return { error: `Too many arguments\n\n${USAGE}` };
+			return { args: { action, value } };
 		default:
-			return { error: `Unknown subcommand \"${positional[0]}\"\n\n${USAGE}` };
+			return { error: `Unknown subcommand \"${tokens[0]}\"\n\n${USAGE}` };
 	}
 }
 
@@ -88,8 +79,8 @@ export function parseIntervalValue(raw: string): number | undefined {
 	return value;
 }
 
-/** Merge a patch into the config file at `path`, creating directories as needed. */
-export function writeConfigLayer(
+/** Merge a patch into the global config file, creating directories as needed. */
+export function writeGlobalConfig(
 	path: string,
 	patch: Partial<TimeContextConfig>,
 ): void {

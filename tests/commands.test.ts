@@ -4,10 +4,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	buildShowReport,
-	configPaths,
+	globalConfigPath,
 	parseIntervalValue,
 	parseTimeConfigArgs,
-	writeConfigLayer,
+	writeGlobalConfig,
 } from "../src/commands.js";
 import { parsePolicyRevision } from "../src/persistence.js";
 import { anchor } from "./helpers.js";
@@ -15,16 +15,14 @@ import { anchor } from "./helpers.js";
 const T0 = 1_700_000_000_000;
 
 describe("parseTimeConfigArgs", () => {
-	it("parses subcommands and the global flag", () => {
-		expect(parseTimeConfigArgs("")).toEqual({ args: { action: "show", global: false } });
-		expect(parseTimeConfigArgs("interval 15 -g")).toEqual({
-			args: { action: "interval", value: "15", global: true },
+	it("parses subcommands", () => {
+		expect(parseTimeConfigArgs("")).toEqual({ args: { action: "show" } });
+		expect(parseTimeConfigArgs("interval 15")).toEqual({
+			args: { action: "interval", value: "15" },
 		});
-		expect(parseTimeConfigArgs("every --global")).toEqual({
-			args: { action: "every", global: true },
-		});
+		expect(parseTimeConfigArgs("every")).toEqual({ args: { action: "every" } });
 		expect(parseTimeConfigArgs("tz Asia/Shanghai")).toEqual({
-			args: { action: "tz", value: "Asia/Shanghai", global: false },
+			args: { action: "tz", value: "Asia/Shanghai" },
 		});
 	});
 
@@ -49,19 +47,19 @@ describe("parseIntervalValue", () => {
 	});
 });
 
-describe("writeConfigLayer", () => {
+describe("writeGlobalConfig", () => {
 	it("merges into an existing file and creates directories", () => {
 		const dir = mkdtempSync(join(tmpdir(), "time-config-"));
 		const path = join(dir, "nested", "pi-time-context.json");
-		writeConfigLayer(path, { checkpointIntervalMinutes: 15 });
-		writeConfigLayer(path, { timeZone: "UTC" });
+		writeGlobalConfig(path, { checkpointIntervalMinutes: 15 });
+		writeGlobalConfig(path, { timeZone: "UTC" });
 		expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
 			checkpointIntervalMinutes: 15,
 			timeZone: "UTC",
 		});
 
 		writeFileSync(path, `${JSON.stringify({ timeZone: "UTC", custom: [1] }, null, 2)}\n`);
-		writeConfigLayer(path, { stampEveryMessage: true });
+		writeGlobalConfig(path, { stampEveryMessage: true });
 		expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
 			timeZone: "UTC",
 			custom: [1],
@@ -70,11 +68,9 @@ describe("writeConfigLayer", () => {
 	});
 });
 
-describe("configPaths", () => {
-	it("derives global and project paths", () => {
-		const paths = configPaths("/proj", { homeDirectory: "/home/x", configDirectoryName: ".pi" });
-		expect(paths.globalPath).toBe("/home/x/.pi/agent/pi-time-context.json");
-		expect(paths.projectPath).toBe("/proj/.pi/pi-time-context.json");
+describe("globalConfigPath", () => {
+	it("derives the global config path", () => {
+		expect(globalConfigPath({ homeDirectory: "/home/x" })).toBe("/home/x/.pi/agent/pi-time-context.json");
 	});
 });
 

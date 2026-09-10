@@ -114,16 +114,10 @@ The extension works without a configuration file. Its defaults are:
 | `timeZone` | `"local"` | Time zone used to render `sent_at`. |
 | `stampEveryMessage` | `false` | Stamp every outbound user and tool-result message instead of using checkpoint intervals. |
 
-Create a global configuration file at:
+Create a configuration file at:
 
 ```text
 ~/.pi/agent/pi-time-context.json
-```
-
-Or add a project-level override at:
-
-```text
-<project>/.pi/pi-time-context.json
 ```
 
 Example:
@@ -144,13 +138,13 @@ Inside Pi you can inspect and change the configuration without leaving the sessi
 ```text
 /time-config                          show the interactive menu
 /time-config show                     current effective config and recent stamps
-/time-config interval <minutes> [-g]  change the checkpoint interval
-/time-config every [-g]               toggle stamping every message
-/time-config threshold <minutes> [-g] change the previous-activity threshold
-/time-config tz <IANA|local|UTC> [-g] change the render time zone
+/time-config interval <minutes>       change the checkpoint interval
+/time-config every                    toggle stamping every message
+/time-config threshold <minutes>      change the previous-activity threshold
+/time-config tz <IANA|local|UTC>      change the render time zone
 ```
 
-- Without `-g` / `--global` the change is written to the project config file; with it, to the global file.
+- Changes are written to the global config file.
 - Every successful change also records an in-session policy revision, so it takes effect immediately for messages that have not been sent yet. Previously stamped messages are never re-rendered.
 - Switching intervals re-buckets checkpoints from the session anchor (T0); the next stamp may therefore arrive sooner or later than the old phase implied.
 - While the extension is active, the footer status line at the bottom of the window shows the current time and the next checkpoint.
@@ -159,15 +153,11 @@ Inside Pi you can inspect and change the configuration without leaving the sessi
 
 ### Configuration rules
 
-
-- Project values override global values field by field.
 - Interval values must be finite numbers from `1` through `10080`.
 - `timeZone` accepts `"local"`, `"UTC"`, or an IANA time zone supported by the runtime, such as `"Asia/Shanghai"` or `"America/New_York"`.
 - `"local"` is resolved to a concrete IANA time zone when the session anchor is created.
 - The resolved policy is frozen with the session anchor. Configuration changes affect only sessions that have not created an anchor yet.
-- Invalid or unknown fields produce warnings and fall back to the previous valid configuration layer or the defaults.
-- Project configuration is ignored while Pi considers the project untrusted.
-- The project configuration directory follows Pi's `CONFIG_DIR_NAME`; `.pi` is the default.
+- Invalid or unknown fields produce warnings and fall back to the defaults.
 
 ## Deterministic sessions and retries
 

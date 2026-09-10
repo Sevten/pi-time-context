@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { CONFIG_DIR_NAME, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { MINUTE_MS, resolveTimeZone } from "./clock.js";
 import type { TimePolicyV1, WarningSink } from "./types.js";
 
@@ -18,8 +18,6 @@ export interface ConfigLoadResult {
 
 export interface ConfigLoadOptions {
 	homeDirectory?: string;
-	includeProjectConfig?: boolean;
-	configDirectoryName?: string;
 }
 
 export const DEFAULT_CONFIG: Readonly<TimeContextConfig> = {
@@ -103,21 +101,12 @@ function applyLayer(
 	return next;
 }
 
-export function loadConfig(cwd: string, options: ConfigLoadOptions = {}): ConfigLoadResult {
+export function loadConfig(options: ConfigLoadOptions = {}): ConfigLoadResult {
 	const warnings: string[] = [];
 	const globalPath = options.homeDirectory
 		? join(options.homeDirectory, ".pi", "agent", "pi-time-context.json")
 		: join(getAgentDir(), "pi-time-context.json");
-	const projectPath = join(
-		cwd,
-		options.configDirectoryName ?? CONFIG_DIR_NAME,
-		"pi-time-context.json",
-	);
-	let config = { ...DEFAULT_CONFIG };
-	config = applyLayer(config, readConfigFile(globalPath, warnings), globalPath, warnings);
-	if (options.includeProjectConfig !== false) {
-		config = applyLayer(config, readConfigFile(projectPath, warnings), projectPath, warnings);
-	}
+	const config = applyLayer({ ...DEFAULT_CONFIG }, readConfigFile(globalPath, warnings), globalPath, warnings);
 	return { config, warnings };
 }
 

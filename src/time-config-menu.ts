@@ -18,14 +18,10 @@ export interface MenuTheme {
 
 export interface MenuDeps {
 	loadConfig(): TimeContextConfig;
-	commit(
-		action: MenuKind | "every",
-		scope: "project" | "global",
-		value: MenuCommitValue,
-	): { summary?: string; error?: string };
+	commit(action: MenuKind | "every", value: MenuCommitValue): { summary?: string; error?: string };
 }
 
-type State = "main" | "value" | "layer";
+type State = "main" | "value";
 
 interface MainItem {
 	label: string;
@@ -44,7 +40,6 @@ const INTERVAL_PRESETS = [5, 10, 15, 30, 60, 120];
 const TZ_PRESETS = ["local", "UTC"];
 const CUSTOM = "Custom";
 const EVERY = "Every message";
-const LAYER_OPTIONS = ["Project", "Global"] as const;
 
 const SUBTITLES: Record<MenuKind, string> = {
 	interval: "Stamp a timestamp every",
@@ -117,14 +112,7 @@ export class TimeConfigMenuComponent {
 	}
 
 	private options(): readonly string[] {
-		switch (this.state) {
-			case "value":
-				return this.valueOptions();
-			case "layer":
-				return LAYER_OPTIONS;
-			default:
-				return MAIN_ITEMS.map((item) => item.label);
-		}
+		return this.state === "value" ? this.valueOptions() : MAIN_ITEMS.map((item) => item.label);
 	}
 
 	private hintLine(): string {
@@ -148,12 +136,10 @@ export class TimeConfigMenuComponent {
 				const labelText = selected ? this.theme.fg("accent", label) : this.theme.fg("text", label);
 				lines.push(marker + labelText + this.theme.fg("muted", items[i].value));
 			}
+			if (this.status) lines.push(this.theme.fg("muted", visibleTruncate(this.status, width)));
 			lines.push("");
 		} else {
-			if (this.state === "value") {
-				lines.push(this.theme.bold(this.theme.fg("accent", SUBTITLES[this.kind])));
-			}
-			if (this.status) lines.push(this.theme.fg("muted", visibleTruncate(this.status, width)));
+			lines.push(this.theme.bold(this.theme.fg("accent", SUBTITLES[this.kind])));
 			lines.push("");
 			const options = this.options();
 			for (let i = 0; i < options.length; i++) {
@@ -178,9 +164,9 @@ export class TimeConfigMenuComponent {
 		if (this.editing) this.inputBuffer = "";
 	}
 
-	private commitWith(scope: "project" | "global"): void {
+	private commitWith(): void {
 		const action = this.pendingValue.every ? "every" : this.kind;
-		const result = this.deps.commit(action, scope, this.pendingValue);
+		const result = this.deps.commit(action, this.pendingValue);
 		this.status = result.error ?? `✓ ${result.summary ?? "done"}`;
 		this.config = this.deps.loadConfig();
 		this.state = "main";
@@ -199,8 +185,7 @@ export class TimeConfigMenuComponent {
 			const offset = this.kind === "interval" ? 1 : 0;
 			this.pendingValue = { minutes: INTERVAL_PRESETS[this.selectedIndex - offset] };
 		}
-		this.state = "layer";
-		this.selectedIndex = 0;
+		this.commitWith();
 	}
 
 	private confirmInput(): void {
@@ -219,8 +204,7 @@ export class TimeConfigMenuComponent {
 			}
 			this.pendingValue = { minutes };
 		}
-		this.state = "layer";
-		this.selectedIndex = 0;
+		this.commitWith();
 	}
 
 	handleInput(data: string): void {
@@ -300,10 +284,6 @@ export class TimeConfigMenuComponent {
 				return;
 			}
 			this.confirmValue(choice);
-			return;
-		}
-		if (this.state === "layer") {
-			this.commitWith(choice === "Global" ? "global" : "project");
 		}
 	}
 }

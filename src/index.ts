@@ -18,11 +18,11 @@ import {
 import {
 	buildInactiveShowReport,
 	buildShowReport,
-	configPaths,
+	globalConfigPath,
 	parseIntervalValue,
 	parseTimeConfigArgs,
 	USAGE,
-	writeConfigLayer,
+	writeGlobalConfig,
 } from "./commands.js";
 import { runTimeConfigMenu } from "./time-config-menu.js";
 import { transformContextMessages } from "./context-transform.js";
@@ -55,10 +55,9 @@ import {
 
 export interface RuntimeOptions {
 	clock?: Clock;
-	configLoader?: (cwd: string, includeProjectConfig: boolean) => ConfigLoadResult;
+	configLoader?: () => ConfigLoadResult;
 	warn?: (message: string) => void;
 	homeDirectory?: string;
-	configDirectoryName?: string;
 }
 
 function emptyState(): RecoveredState {
@@ -73,10 +72,9 @@ function emptyState(): RecoveredState {
 export class TimeContextRuntime {
 	private readonly pi: ExtensionAPI;
 	private readonly clock: Clock;
-	private readonly configLoader: (cwd: string, includeProjectConfig: boolean) => ConfigLoadResult;
+	private readonly configLoader: () => ConfigLoadResult;
 	private readonly externalWarn?: (message: string) => void;
 	private readonly homeDirectory?: string;
-	private readonly configDirectoryName?: string;
 	private readonly warnings = new Set<string>();
 	private readonly tracker: ActivityTracker;
 	private state: RecoveredState = emptyState();
@@ -90,12 +88,9 @@ export class TimeContextRuntime {
 	constructor(pi: ExtensionAPI, options: RuntimeOptions = {}) {
 		this.pi = pi;
 		this.clock = options.clock ?? systemClock;
-		this.configLoader =
-			options.configLoader ??
-			((cwd, includeProjectConfig) => loadConfig(cwd, { includeProjectConfig }));
+		this.configLoader = options.configLoader ?? (() => loadConfig({ homeDirectory: this.homeDirectory }));
 		this.externalWarn = options.warn;
 		this.homeDirectory = options.homeDirectory;
-		this.configDirectoryName = options.configDirectoryName;
 		this.tracker = new ActivityTracker(this.clock, (message) => this.warn(message));
 	}
 
@@ -136,7 +131,7 @@ export class TimeContextRuntime {
 		t0Ms: number,
 		ctx: ExtensionContext,
 	): SessionAnchorV1 {
-		const loaded = this.configLoader(ctx.cwd, ctx.isProjectTrusted());
+		const loaded = this.loadConfigWithWarnings();
 		for (const warning of loaded.warnings) this.warn(warning);
 		return {
 			version: 1,
@@ -161,7 +156,7 @@ export class TimeContextRuntime {
 	async onSessionStart(event: SessionStartEvent, ctx: ExtensionContext): Promise<void> {
 		this.tracker.reset();
 		this.baselinePending = false;
-		const loaded = this.configLoader(ctx.cwd, ctx.isProjectTrusted());
+		const loaded = this.loadConfigWithWarnings();
 		for (const warning of loaded.warnings) this.warn(warning);
 		if (event.reason === "fork" && event.previousSessionFile) {
 			await copyForkMetadata({
@@ -329,7 +324,7 @@ export class TimeContextRuntime {
 		};
 	}
 
-	private appendRevision(policy: TimePolicyV1, scope: "project" | "global"): void {
+	private appendRevision(policy: TimePolicyV1): void {
 		const nowMs = readClock(this.clock);
 		if (nowMs === undefined) {
 			this.warn("Clock is invalid; policy revision was not recorded");
@@ -340,7 +335,7 @@ export class TimeContextRuntime {
 			effectiveFromMs: nowMs,
 			policy,
 			source: "command",
-			scope,
+			scope: "global",
 		};
 		this.pi.appendEntry(POLICY_REVISIONS_ENTRY, revision);
 		this.state.revisions = [...this.state.revisions, revision].sort(
@@ -355,6 +350,12 @@ export class TimeContextRuntime {
 		return { anchor: this.state.anchor, policy: resolvePolicy(this.state.anchor, this.state.revisions, nowMs) };
 	}
 
+	private loadConfigWithWarnings(): ConfigLoadResult {
+		const loaded = this.configLoader();
+		for (const warning of loaded.warnings) this.warn(warning);
+		return loaded;
+	}
+
 	private loadCurrentConfig(ctx: ExtensionContext): TimeContextConfig {
 		const effective = this.currentEffectivePolicy();
 		if (effective) {
@@ -365,7 +366,7 @@ export class TimeContextRuntime {
 				stampEveryMessage: effective.policy.stampEveryMessage,
 			};
 		}
-		const loaded = this.configLoader(ctx.cwd, ctx.isProjectTrusted());
+		const loaded = this.loadConfigWithWarnings();
 		for (const warning of loaded.warnings) this.warn(warning);
 		return loaded.config;
 	}
@@ -412,15 +413,14 @@ export class TimeContextRuntime {
 		effective: { anchor: SessionAnchorV1; policy: TimePolicyV1 } | undefined,
 		change: { patch: Partial<TimeContextConfig>; nextPolicy: TimePolicyV1 },
 		action: "interval" | "threshold" | "tz" | "every",
-		scope: "project" | "global",
-		targetPath: string,
 	): { summary: string } | { error: string } {
+		const targetPath = globalConfigPath({ homeDirectory: this.homeDirectory });
 		try {
-			writeConfigLayer(targetPath, change.patch);
+			writeGlobalConfig(targetPath, change.patch);
 		} catch (error) {
 			return { error: `Failed to write ${targetPath}: ${error instanceof Error ? error.message : String(error)}` };
 		}
-		if (effective) this.appendRevision(change.nextPolicy, scope);
+		if (effective) this.appendRevision(change.nextPolicy);
 		const policy = change.nextPolicy;
 		const summary =
 			action === "every"
@@ -431,8 +431,8 @@ export class TimeContextRuntime {
 						? `Checkpoint interval: ${policy.stampEveryMessage ? "every message" : `${Math.round(policy.checkpointIntervalMs / 60_000)} minutes`}`
 						: `Previous-activity threshold: ${Math.round(policy.previousActivityThresholdMs / 60_000)} minutes`;
 		const scopeNote = effective
-			? `written to ${targetPath}; applies to subsequent messages`
-			: `written to ${targetPath}; takes effect when the session activates (first user message)`;
+			? "written to the global config; applies to subsequent messages"
+			: "written to the global config; takes effect when the session activates (first user message)";
 		return { summary: `${summary} (${scopeNote})` };
 	}
 
@@ -440,11 +440,7 @@ export class TimeContextRuntime {
 		const nowMs = readClock(this.clock);
 		if (nowMs === undefined || !this.state.anchor) {
 			ctx.ui.notify(
-				buildInactiveShowReport(() => {
-					const loaded = this.configLoader(ctx.cwd, ctx.isProjectTrusted());
-					for (const warning of loaded.warnings) this.warn(warning);
-					return loaded.config;
-				}),
+				buildInactiveShowReport(() => this.loadConfigWithWarnings().config),
 			);
 			return;
 		}
@@ -459,24 +455,14 @@ export class TimeContextRuntime {
 	}
 
 	private async runInteractiveMenu(ctx: ExtensionCommandContext): Promise<void> {
-		const paths = configPaths(ctx.cwd, {
-			homeDirectory: this.homeDirectory,
-			configDirectoryName: this.configDirectoryName,
-		});
 		await runTimeConfigMenu(ctx, {
 			loadConfig: () => this.loadCurrentConfig(ctx),
-			commit: (action, scope, value) => {
+			commit: (action, value) => {
 				const effective = this.currentEffectivePolicy();
 				const config = this.loadCurrentConfig(ctx);
 				const change = this.computeChange(action, config, value);
 				if (change.error) return { error: change.error };
-				return this.commitChange(
-					effective,
-					change,
-					action,
-					scope,
-					scope === "global" ? paths.globalPath : paths.projectPath,
-				);
+				return this.commitChange(effective, change, action);
 			},
 		});
 	}
@@ -498,11 +484,7 @@ export class TimeContextRuntime {
 			ctx.ui.notify(parsed.error ?? "Failed to parse arguments", "error");
 			return;
 		}
-		const { action, global } = parsed.args;
-		const paths = configPaths(ctx.cwd, {
-			homeDirectory: this.homeDirectory,
-			configDirectoryName: this.configDirectoryName,
-		});
+		const { action } = parsed.args;
 
 		if (action === "show") {
 			this.showReport(ctx);
@@ -511,8 +493,6 @@ export class TimeContextRuntime {
 
 		const effective = this.currentEffectivePolicy();
 		const currentConfig = this.loadCurrentConfig(ctx);
-		const scope = global ? "global" : "project";
-		const targetPath = global ? paths.globalPath : paths.projectPath;
 
 		const value =
 			action === "every"
@@ -525,7 +505,7 @@ export class TimeContextRuntime {
 			ctx.ui.notify(change.error, "error");
 			return;
 		}
-		const result = this.commitChange(effective, change, action, scope, targetPath);
+		const result = this.commitChange(effective, change, action);
 		if ("error" in result) {
 			ctx.ui.notify(result.error, "error");
 			return;

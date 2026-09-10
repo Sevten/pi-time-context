@@ -64,7 +64,6 @@ function createHarness(
 	clock: MutableClock,
 	session = new MockSession(),
 	options: {
-		projectTrusted?: boolean;
 		configLoader?: RuntimeOptions["configLoader"];
 	} = {},
 ) {
@@ -89,7 +88,7 @@ function createHarness(
 	});
 	const context = {
 		cwd: "/project",
-		isProjectTrusted: () => options.projectTrusted ?? true,
+		isProjectTrusted: () => true,
 		sessionManager: session,
 	} as unknown as ExtensionContext;
 	return { runtime, session, context, warnings };
@@ -116,29 +115,6 @@ function carrierContent(message: AgentMessage | undefined): unknown {
 }
 
 describe("runtime lifecycle", () => {
-	it("passes project trust to the configuration loader", async () => {
-		const clock = new MutableClock(100);
-		const includeProjectConfigValues: boolean[] = [];
-		const { runtime, session, context } = createHarness(clock, new MockSession(), {
-			projectTrusted: false,
-			configLoader: (_cwd, includeProjectConfig) => {
-				includeProjectConfigValues.push(includeProjectConfig);
-				return {
-					config: {
-						checkpointIntervalMinutes: 30,
-						previousActivityThresholdMinutes: 30,
-						timeZone: "UTC",
-						stampEveryMessage: false,					},
-					warnings: [],
-				};
-			},
-		});
-		await runtime.onSessionStart(startEvent(), context);
-		runtime.onMessageEnd(endEvent(user(1)), context);
-
-		expect(includeProjectConfigValues).toEqual([false, false]);
-	});
-
 	it("anchors T0 at first user processing and keeps stamped/null decisions immutable across retries", async () => {
 		const t0 = Date.UTC(2026, 7, 22, 6, 15);
 		const clock = new MutableClock(t0);
