@@ -462,14 +462,11 @@ export class TimeContextRuntime {
 
 	private async pickScope(ctx: ExtensionCommandContext, paths: GlobalProjectPaths): Promise<"project" | "global" | undefined> {
 		const choice = await ctx.ui.select(
-			"Write to which config layer?",
-			[
-				`Project (${paths.projectPath})`,
-				`Global (${paths.globalPath})`,
-			],
+			`Write to which layer?  Project: ${paths.projectPath}  ·  Global: ${paths.globalPath}`,
+			["Project", "Global"],
 		);
 		if (choice === undefined) return undefined;
-		return choice.startsWith("Project") ? "project" : "global";
+		return choice === "Project" ? "project" : "global";
 	}
 
 	private async pickMinutes(
@@ -477,22 +474,19 @@ export class TimeContextRuntime {
 		title: string,
 		allowEveryMessage: boolean,
 	): Promise<{ kind: "every" } | { kind: "minutes"; minutes: number } | undefined> {
+		const every = "Every message";
 		const custom = "Custom…";
+		const presets = [5, 10, 15, 30, 60, 120];
 		const options = [
-			...(allowEveryMessage ? ["Every message"] : []),
-			"5 minutes",
-			"10 minutes",
-			"15 minutes",
-			"30 minutes",
-			"60 minutes",
-			"120 minutes",
+			...(allowEveryMessage ? [every] : []),
+			...presets.map((minutes) => `${minutes} min`),
 			custom,
 		];
 		const choice = await ctx.ui.select(title, options);
 		if (choice === undefined) return undefined;
-		if (choice === "Every message") return { kind: "every" };
+		if (choice === every) return { kind: "every" };
 		if (choice !== custom) {
-			return { kind: "minutes", minutes: Number.parseInt(choice, 10) };
+			return { kind: "minutes", minutes: presets[options.indexOf(choice)] };
 		}
 		for (;;) {
 			const raw = await ctx.ui.input(title, "Minutes (1-10080)");
@@ -505,9 +499,9 @@ export class TimeContextRuntime {
 
 	private async pickTimeZone(ctx: ExtensionCommandContext): Promise<string | undefined> {
 		const custom = "Custom…";
-		const choice = await ctx.ui.select("Time zone", ["local (follow the system)", "UTC", custom]);
+		const choice = await ctx.ui.select("Time zone", ["local", "UTC", custom]);
 		if (choice === undefined) return undefined;
-		if (choice !== custom) return choice.startsWith("local") ? "local" : "UTC";
+		if (choice !== custom) return choice;
 		for (;;) {
 			const raw = await ctx.ui.input("Time zone", "IANA name (e.g. Asia/Shanghai)");
 			if (raw === undefined) return undefined;
@@ -524,23 +518,20 @@ export class TimeContextRuntime {
 		});
 		for (;;) {
 			const config = this.loadCurrentConfig(ctx);
-			const intervalLabel = config.stampEveryMessage ? "every message" : `${config.checkpointIntervalMinutes} minutes`;
+			const intervalLabel = config.stampEveryMessage ? "every message" : `${config.checkpointIntervalMinutes} min`;
 			const tzLabel = resolveTimeZone(config.timeZone) ?? config.timeZone;
-			const action = await ctx.ui.select("pi-time-context configuration", [
-				`interval — checkpoint interval (currently ${intervalLabel})`,
-				`threshold — previous-activity threshold (currently ${config.previousActivityThresholdMinutes} minutes)`,
-				`timeZone — time zone (currently ${tzLabel})`,
-				"show — view configuration and recent decisions",
-				"exit",
-			]);
+			const action = await ctx.ui.select(
+				`pi-time-context — interval: ${intervalLabel} · threshold: ${config.previousActivityThresholdMinutes} min · tz: ${tzLabel}`,
+				["interval", "threshold", "timeZone", "show", "exit"],
+			);
 			if (action === undefined || action === "exit") return;
 
-			if (action.startsWith("show")) {
+			if (action === "show") {
 				this.showReport(ctx);
 				continue;
 			}
 
-			const kind = action.startsWith("interval") ? "interval" : action.startsWith("threshold") ? "threshold" : "tz";
+			const kind = action as "interval" | "threshold" | "tz";
 			const effective = this.currentEffectivePolicy();
 			if (kind === "tz") {
 				const timeZone = await this.pickTimeZone(ctx);
