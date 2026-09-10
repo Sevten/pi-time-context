@@ -45,7 +45,7 @@ export interface ParseResult {
 	error?: string;
 }
 
-const USAGE = [
+export const USAGE = [
 	"Usage:",
 	"  /time-config              Interactive configuration",
 	"  /time-config show         Show current config and recent timestamps",

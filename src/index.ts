@@ -12,14 +12,17 @@ import {
 	type ConfigLoadResult,
 	type TimeContextConfig,
 	freezePolicy,
+	isValidIntervalMinutes,
 	loadConfig,
 } from "./config.js";
-import { buildInactiveShowReport } from "./commands.js";
 import {
+	buildInactiveShowReport,
 	buildShowReport,
 	configPaths,
+	type GlobalProjectPaths,
 	parseIntervalValue,
 	parseTimeConfigArgs,
+	USAGE,
 	writeConfigLayer,
 } from "./commands.js";
 import { transformContextMessages } from "./context-transform.js";
@@ -352,7 +355,241 @@ export class TimeContextRuntime {
 		return { anchor: this.state.anchor, policy: resolvePolicy(this.state.anchor, this.state.revisions, nowMs) };
 	}
 
+	private loadCurrentConfig(ctx: ExtensionContext): TimeContextConfig {
+		const effective = this.currentEffectivePolicy();
+		if (effective) {
+			return {
+				checkpointIntervalMinutes: Math.round(effective.policy.checkpointIntervalMs / 60_000),
+				previousActivityThresholdMinutes: Math.round(effective.policy.previousActivityThresholdMs / 60_000),
+				timeZone: effective.policy.timeZone,
+				stampEveryMessage: effective.policy.stampEveryMessage,
+			};
+		}
+		const loaded = this.configLoader(ctx.cwd, ctx.isProjectTrusted());
+		for (const warning of loaded.warnings) this.warn(warning);
+		return loaded.config;
+	}
+
+	private computeChange(
+		action: "interval" | "threshold" | "tz" | "every",
+		currentConfig: TimeContextConfig,
+		value: { minutes?: number; timeZone?: string; every?: boolean },
+	): { patch: Partial<TimeContextConfig>; nextPolicy: TimePolicyV1; error?: string } {
+		const base = freezePolicy(currentConfig, (message) => this.warn(message));
+		if (action === "every") {
+			const enabled = value.every ?? !currentConfig.stampEveryMessage;
+			return { patch: { stampEveryMessage: enabled }, nextPolicy: { ...base, stampEveryMessage: enabled } };
+		}
+		if (action === "interval") {
+			const minutes = value.minutes;
+			if (minutes === undefined || !isValidIntervalMinutes(minutes)) {
+				return { patch: {}, nextPolicy: base, error: "Interval must be an integer between 1 and 10080 minutes" };
+			}
+			return {
+				patch: { checkpointIntervalMinutes: minutes, stampEveryMessage: false },
+				nextPolicy: { ...base, checkpointIntervalMs: minutes * 60_000, stampEveryMessage: false },
+			};
+		}
+		if (action === "threshold") {
+			const minutes = value.minutes;
+			if (minutes === undefined || !isValidIntervalMinutes(minutes)) {
+				return { patch: {}, nextPolicy: base, error: "Threshold must be an integer between 1 and 10080 minutes" };
+			}
+			return {
+				patch: { previousActivityThresholdMinutes: minutes },
+				nextPolicy: { ...base, previousActivityThresholdMs: minutes * 60_000 },
+			};
+		}
+		const requested = value.timeZone ?? "";
+		const resolved = resolveTimeZone(requested);
+		if (!resolved) {
+			return { patch: {}, nextPolicy: base, error: `Unrecognized time zone "${requested}" (use local, UTC, or an IANA name)` };
+		}
+		return { patch: { timeZone: requested }, nextPolicy: { ...base, timeZone: resolved } };
+	}
+
+	private commitChange(
+		effective: { anchor: SessionAnchorV1; policy: TimePolicyV1 } | undefined,
+		change: { patch: Partial<TimeContextConfig>; nextPolicy: TimePolicyV1 },
+		action: "interval" | "threshold" | "tz" | "every",
+		scope: "project" | "global",
+		targetPath: string,
+		ctx: ExtensionCommandContext,
+	): void {
+		try {
+			writeConfigLayer(targetPath, change.patch);
+		} catch (error) {
+			ctx.ui.notify(`Failed to write ${targetPath}: ${error instanceof Error ? error.message : String(error)}`, "error");
+			return;
+		}
+		if (effective) this.appendRevision(change.nextPolicy, scope);
+		const policy = change.nextPolicy;
+		const summary =
+			action === "every"
+				? `Stamp every message: ${policy.stampEveryMessage ? "on" : "off"}`
+				: action === "tz"
+					? `Time zone: ${policy.timeZone}`
+					: action === "interval"
+						? `Checkpoint interval: ${policy.stampEveryMessage ? "every message" : `${Math.round(policy.checkpointIntervalMs / 60_000)} minutes`}`
+						: `Previous-activity threshold: ${Math.round(policy.previousActivityThresholdMs / 60_000)} minutes`;
+		const scopeNote = effective
+			? `written to the ${scope} layer; applies to subsequent messages`
+			: `written to the ${scope} layer; takes effect when the session activates (first user message)`;
+		ctx.ui.notify(`${summary} (${scopeNote})`);
+	}
+
+	private showReport(ctx: ExtensionCommandContext): void {
+		const nowMs = readClock(this.clock);
+		if (nowMs === undefined || !this.state.anchor) {
+			ctx.ui.notify(
+				buildInactiveShowReport(() => {
+					const loaded = this.configLoader(ctx.cwd, ctx.isProjectTrusted());
+					for (const warning of loaded.warnings) this.warn(warning);
+					return loaded.config;
+				}),
+			);
+			return;
+		}
+		ctx.ui.notify(
+			buildShowReport({
+				anchor: this.state.anchor,
+				revisions: this.state.revisions,
+				decisions: [...this.state.decisionsByCarrierId.values()],
+				nowMs,
+			}),
+		);
+	}
+
+	private async pickScope(ctx: ExtensionCommandContext, paths: GlobalProjectPaths): Promise<"project" | "global" | undefined> {
+		const choice = await ctx.ui.select(
+			"Write to which config layer?",
+			[
+				`Project (${paths.projectPath})`,
+				`Global (${paths.globalPath})`,
+			],
+		);
+		if (choice === undefined) return undefined;
+		return choice.startsWith("Project") ? "project" : "global";
+	}
+
+	private async pickMinutes(
+		ctx: ExtensionCommandContext,
+		title: string,
+		allowEveryMessage: boolean,
+	): Promise<{ kind: "every" } | { kind: "minutes"; minutes: number } | undefined> {
+		const custom = "Custom…";
+		const options = [
+			...(allowEveryMessage ? ["Every message"] : []),
+			"5 minutes",
+			"10 minutes",
+			"15 minutes",
+			"30 minutes",
+			"60 minutes",
+			"120 minutes",
+			custom,
+		];
+		const choice = await ctx.ui.select(title, options);
+		if (choice === undefined) return undefined;
+		if (choice === "Every message") return { kind: "every" };
+		if (choice !== custom) {
+			return { kind: "minutes", minutes: Number.parseInt(choice, 10) };
+		}
+		for (;;) {
+			const raw = await ctx.ui.input(title, "Minutes (1-10080)");
+			if (raw === undefined) return undefined;
+			const minutes = parseIntervalValue(raw.trim());
+			if (minutes !== undefined) return { kind: "minutes", minutes };
+			ctx.ui.notify("Interval must be an integer between 1 and 10080 minutes", "error");
+		}
+	}
+
+	private async pickTimeZone(ctx: ExtensionCommandContext): Promise<string | undefined> {
+		const custom = "Custom…";
+		const choice = await ctx.ui.select("Time zone", ["local (follow the system)", "UTC", custom]);
+		if (choice === undefined) return undefined;
+		if (choice !== custom) return choice.startsWith("local") ? "local" : "UTC";
+		for (;;) {
+			const raw = await ctx.ui.input("Time zone", "IANA name (e.g. Asia/Shanghai)");
+			if (raw === undefined) return undefined;
+			const trimmed = raw.trim();
+			if (resolveTimeZone(trimmed)) return trimmed;
+			ctx.ui.notify(`Unrecognized time zone "${trimmed}" (use local, UTC, or an IANA name)`, "error");
+		}
+	}
+
+	private async runInteractiveMenu(ctx: ExtensionCommandContext): Promise<void> {
+		const paths = configPaths(ctx.cwd, {
+			homeDirectory: this.homeDirectory,
+			configDirectoryName: this.configDirectoryName,
+		});
+		for (;;) {
+			const config = this.loadCurrentConfig(ctx);
+			const intervalLabel = config.stampEveryMessage ? "every message" : `${config.checkpointIntervalMinutes} minutes`;
+			const tzLabel = resolveTimeZone(config.timeZone) ?? config.timeZone;
+			const action = await ctx.ui.select("pi-time-context configuration", [
+				`interval — checkpoint interval (currently ${intervalLabel})`,
+				`threshold — previous-activity threshold (currently ${config.previousActivityThresholdMinutes} minutes)`,
+				`timeZone — time zone (currently ${tzLabel})`,
+				"show — view configuration and recent decisions",
+				"exit",
+			]);
+			if (action === undefined || action === "exit") return;
+
+			if (action.startsWith("show")) {
+				this.showReport(ctx);
+				continue;
+			}
+
+			const kind = action.startsWith("interval") ? "interval" : action.startsWith("threshold") ? "threshold" : "tz";
+			const effective = this.currentEffectivePolicy();
+			if (kind === "tz") {
+				const timeZone = await this.pickTimeZone(ctx);
+				if (timeZone === undefined) continue;
+				const scope = await this.pickScope(ctx, paths);
+				if (scope === undefined) continue;
+				const change = this.computeChange("tz", config, { timeZone });
+				if (change.error) {
+					ctx.ui.notify(change.error, "error");
+					continue;
+				}
+				this.commitChange(effective, change, "tz", scope, scope === "global" ? paths.globalPath : paths.projectPath, ctx);
+			} else {
+				const picked = await this.pickMinutes(
+					ctx,
+					kind === "interval" ? "Checkpoint interval" : "Previous-activity threshold",
+					kind === "interval",
+				);
+				if (!picked) continue;
+				const scope = await this.pickScope(ctx, paths);
+				if (scope === undefined) continue;
+				const change =
+					picked.kind === "every"
+						? this.computeChange("every", config, { every: true })
+						: this.computeChange(kind, config, { minutes: picked.minutes });
+				if (change.error) {
+					ctx.ui.notify(change.error, "error");
+					continue;
+				}
+				this.commitChange(effective, change, kind, scope, scope === "global" ? paths.globalPath : paths.projectPath, ctx);
+				if (kind === "interval") {
+					ctx.ui.notify(`Note: previous-activity threshold remains ${config.previousActivityThresholdMinutes} minutes (independent of the interval)`);
+				}
+			}
+		}
+	}
+
 	async handleTimeConfig(args: string, ctx: ExtensionCommandContext): Promise<void> {
+		if (args.trim() === "") {
+			if (ctx.hasUI) {
+				await this.runInteractiveMenu(ctx);
+				return;
+			}
+			ctx.ui.notify(
+				"Interactive UI is unavailable in this mode; use subcommands:\n\n" + USAGE,
+				"warning",
+			);
+			return;
+		}
 		const parsed = parseTimeConfigArgs(args);
 		if (!parsed.args) {
 			ctx.ui.notify(parsed.error ?? "Failed to parse arguments", "error");
@@ -365,106 +602,27 @@ export class TimeContextRuntime {
 		});
 
 		if (action === "show") {
-			const nowMs = readClock(this.clock);
-			if (nowMs === undefined || !this.state.anchor) {
-				ctx.ui.notify(
-					buildInactiveShowReport(() => {
-						const loaded = this.configLoader(ctx.cwd, ctx.isProjectTrusted());
-						for (const warning of loaded.warnings) this.warn(warning);
-						return loaded.config;
-					}),
-				);
-				return;
-			}
-			ctx.ui.notify(
-				buildShowReport({
-					anchor: this.state.anchor,
-					revisions: this.state.revisions,
-					decisions: [...this.state.decisionsByCarrierId.values()],
-					nowMs,
-				}),
-			);
+			this.showReport(ctx);
 			return;
 		}
 
 		const effective = this.currentEffectivePolicy();
-		let currentConfig: TimeContextConfig;
-		if (effective) {
-			currentConfig = {
-				checkpointIntervalMinutes: Math.round(effective.policy.checkpointIntervalMs / 60_000),
-				previousActivityThresholdMinutes: Math.round(effective.policy.previousActivityThresholdMs / 60_000),
-				timeZone: effective.policy.timeZone,
-				stampEveryMessage: effective.policy.stampEveryMessage,
-			};
-		} else {
-			const loaded = this.configLoader(ctx.cwd, ctx.isProjectTrusted());
-			for (const warning of loaded.warnings) this.warn(warning);
-			currentConfig = loaded.config;
-		}
+		const currentConfig = this.loadCurrentConfig(ctx);
 		const scope = global ? "global" : "project";
 		const targetPath = global ? paths.globalPath : paths.projectPath;
 
-		let patch: Partial<TimeContextConfig>;
-		let nextPolicy: TimePolicyV1;
-		if (action === "every") {
-			const enabled = !currentConfig.stampEveryMessage;
-			patch = { stampEveryMessage: enabled };
-			nextPolicy = { ...freezePolicy(currentConfig, (message) => this.warn(message)), stampEveryMessage: enabled };
-		} else if (action === "interval") {
-			const minutes = parsed.args.value !== undefined ? parseIntervalValue(parsed.args.value) : undefined;
-			if (minutes === undefined) {
-				ctx.ui.notify("Interval must be an integer between 1 and 10080 minutes", "error");
-				return;
-			}
-			patch = { checkpointIntervalMinutes: minutes, stampEveryMessage: false };
-			nextPolicy = {
-				...freezePolicy(currentConfig, (message) => this.warn(message)),
-				checkpointIntervalMs: minutes * 60_000,
-				stampEveryMessage: false,
-			};
-		} else if (action === "threshold") {
-			const minutes = parsed.args.value !== undefined ? parseIntervalValue(parsed.args.value) : undefined;
-			if (minutes === undefined) {
-				ctx.ui.notify("Threshold must be an integer between 1 and 10080 minutes", "error");
-				return;
-			}
-			patch = { previousActivityThresholdMinutes: minutes };
-			nextPolicy = {
-				...freezePolicy(currentConfig, (message) => this.warn(message)),
-				previousActivityThresholdMs: minutes * 60_000,
-			};
-		} else {
-			const requested = parsed.args.value ?? "";
-			if (!resolveTimeZone(requested)) {
-				ctx.ui.notify(`Unrecognized time zone \"${requested}\" (use local, UTC, or an IANA name)`, "error");
-				return;
-			}
-			patch = { timeZone: requested };
-			nextPolicy = {
-				...freezePolicy(currentConfig, (message) => this.warn(message)),
-				timeZone: resolveTimeZone(requested) ?? "UTC",
-			};
-		}
-
-		try {
-			writeConfigLayer(targetPath, patch);
-		} catch (error) {
-			ctx.ui.notify(`Failed to write ${targetPath}: ${error instanceof Error ? error.message : String(error)}`, "error");
+		const value =
+			action === "every"
+				? {}
+				: action === "tz"
+					? { timeZone: parsed.args.value ?? "" }
+					: { minutes: parseIntervalValue(parsed.args.value ?? "") };
+		const change = this.computeChange(action, currentConfig, value);
+		if (change.error) {
+			ctx.ui.notify(change.error, "error");
 			return;
 		}
-		if (effective) this.appendRevision(nextPolicy, scope);
-		const summary =
-			action === "every"
-				? `Stamp every message: ${nextPolicy.stampEveryMessage ? "on" : "off"}`
-				: action === "tz"
-					? `Time zone: ${nextPolicy.timeZone}`
-					: action === "interval"
-						? `Checkpoint interval: ${nextPolicy.stampEveryMessage ? "every message" : `${Math.round(nextPolicy.checkpointIntervalMs / 60_000)} minutes`}`
-						: `Previous-activity threshold: ${Math.round(nextPolicy.previousActivityThresholdMs / 60_000)} minutes`;
-		const scopeNote = effective
-			? `written to the ${scope === "global" ? "global" : "project"} layer; applies to subsequent messages`
-			: `written to the ${scope === "global" ? "global" : "project"} layer; takes effect when the session activates (first user message)`;
-		ctx.ui.notify(`${summary} (${scopeNote})`);
+		this.commitChange(effective, change, action, scope, targetPath, ctx);
 	}
 }
 
