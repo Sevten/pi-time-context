@@ -33,9 +33,9 @@ interface MainItem {
 }
 
 const MAIN_ITEMS: readonly MainItem[] = [
-	{ label: "Timestamp interval", value: () => "" },
-	{ label: "Idle gap threshold", value: () => "" },
-	{ label: "Time zone", value: () => "" },
+	{ label: "Stamp a timestamp every", value: () => "" },
+	{ label: "Show idle gap after", value: () => "" },
+	{ label: "Show times in", value: () => "" },
 ];
 
 const MAIN_KEYS = ["interval", "threshold", "tz"] as const;
@@ -47,9 +47,9 @@ const EVERY = "Every message";
 const LAYER_OPTIONS = ["Project", "Global"] as const;
 
 const SUBTITLES: Record<MenuKind, string> = {
-	interval: "Timestamp interval",
-	threshold: "Idle gap threshold",
-	tz: "Time zone",
+	interval: "Stamp a timestamp every",
+	threshold: "Show idle gap after",
+	tz: "Show times in",
 };
 
 function stripAnsi(line: string): string {
@@ -98,15 +98,15 @@ export class TimeConfigMenuComponent {
 	}
 
 	private intervalValue(): string {
-		return this.config.stampEveryMessage ? "every message" : `every ${this.config.checkpointIntervalMinutes} min`;
+		return this.config.stampEveryMessage ? "message" : `${this.config.checkpointIntervalMinutes} min`;
 	}
 
 	private mainItems(): { label: string; value: string }[] {
 		const tz = resolveTimeZone(this.config.timeZone) ?? this.config.timeZone;
 		return [
-			{ label: "Timestamp interval", value: this.intervalValue() },
-			{ label: "Idle gap threshold", value: `${this.config.previousActivityThresholdMinutes} min` },
-			{ label: "Time zone", value: tz },
+			{ label: "Stamp a timestamp every", value: this.intervalValue() },
+			{ label: "Show idle gap after", value: `${this.config.previousActivityThresholdMinutes} min idle` },
+			{ label: "Show times in", value: tz },
 		];
 	}
 
@@ -132,13 +132,7 @@ export class TimeConfigMenuComponent {
 		if (this.editing) {
 			return keyHint(t, "enter", "confirm") + t.fg("muted", "  ·  ") + keyHint(t, "esc", "exit menu");
 		}
-		return (
-			keyHint(t, "enter", "select") +
-			t.fg("muted", "  ·  ") +
-			keyHint(t, "1-9", "quick pick") +
-			t.fg("muted", "  ·  ") +
-			keyHint(t, "esc", "back")
-		);
+		return keyHint(t, "enter", "select") + t.fg("muted", "  ·  ") + keyHint(t, "esc", "back");
 	}
 
 	render(width: number): string[] {
@@ -280,13 +274,6 @@ export class TimeConfigMenuComponent {
 		if (data === "\r" || data === "\n") {
 			this.confirm();
 			return;
-		}
-		if (/^[1-9]$/.test(data)) {
-			const index = Number(data) - 1;
-			if (index < this.options().length) {
-				this.selectedIndex = index;
-				this.confirm();
-			}
 		}
 	}
 
