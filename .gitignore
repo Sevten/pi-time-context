@@ -3,3 +3,4 @@ coverage/
 *.tgz
 .codegraph/
 .pi/AGENTS.md
+docs/
