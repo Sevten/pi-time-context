@@ -19,7 +19,6 @@ import {
 	configPaths,
 	parseIntervalValue,
 	parseTimeConfigArgs,
-	statusLine,
 	writeConfigLayer,
 } from "./commands.js";
 import { transformContextMessages } from "./context-transform.js";
@@ -312,7 +311,6 @@ export class TimeContextRuntime {
 		const associations = associateCarrierMessages(event.messages, ctx.sessionManager.getBranch());
 		const group = findTailCarrierGroup(event.messages, associations);
 		this.createDecisionsForNewGroup(group, requestAtMs, ctx);
-		this.updateWidget(ctx);
 
 		const anchor = this.state.anchor;
 		if (!anchor) return { messages: [...event.messages] };
@@ -325,19 +323,6 @@ export class TimeContextRuntime {
 				this.state.revisions,
 			),
 		};
-	}
-
-	private updateWidget(ctx: ExtensionContext): void {
-		if (!ctx.hasUI || !this.state.anchor) return;
-		const nowMs = readClock(this.clock);
-		if (nowMs === undefined) return;
-		const policy = resolvePolicy(this.state.anchor, this.state.revisions, nowMs);
-		try {
-			// Current time lives in the footer status line (bottom of the window).
-			if (ctx.mode === "tui") ctx.ui.setStatus("pi-time-context", statusLine(nowMs, this.state.anchor, policy));
-		} catch {
-			// Status display is best-effort; never break the caller.
-		}
 	}
 
 	private appendRevision(policy: TimePolicyV1, scope: "project" | "global"): void {
@@ -461,7 +446,6 @@ export class TimeContextRuntime {
 						? `Checkpoint interval: ${nextPolicy.stampEveryMessage ? "every message" : `${Math.round(nextPolicy.checkpointIntervalMs / 60_000)} minutes`}`
 						: `Previous-activity threshold: ${Math.round(nextPolicy.previousActivityThresholdMs / 60_000)} minutes`;
 		ctx.ui.notify(`${summary} (written to the ${scope === "global" ? "global" : "project"} layer; applies to subsequent messages)`);
-		this.updateWidget(ctx);
 	}
 }
 

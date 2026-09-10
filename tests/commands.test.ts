@@ -7,7 +7,6 @@ import {
 	configPaths,
 	parseIntervalValue,
 	parseTimeConfigArgs,
-	statusLine,
 	writeConfigLayer,
 } from "../src/commands.js";
 import { parsePolicyRevision } from "../src/persistence.js";
@@ -114,12 +113,4 @@ describe("buildShowReport and widgetLines", () => {
 		expect(report).toContain("stamping every message");
 	});
 
-	it("renders the status line for both modes", () => {
-		const status = statusLine(T0 + 60_000, base, base.policy);
-		expect(status).not.toContain("⏱");
-		expect(status).toContain("next checkpoint");
-		const everyStatus = statusLine(T0 + 60_000, base, { ...base.policy, stampEveryMessage: true });
-		expect(everyStatus).not.toContain("next checkpoint");
-		expect(everyStatus).toMatch(/\d{2}:\d{2}$/);
-	});
 });

@@ -167,10 +167,4 @@ export function buildShowReport(info: TimeDisplayInfo): string {
 	return lines.join("\n");
 }
 
-/** Compact text for the footer status line: current time plus next checkpoint. */
-export function statusLine(nowMs: number, anchor: SessionAnchorV1, policy: TimePolicyV1): string {
-	const next = nextCheckpointAt(nowMs, anchor, policy);
-	const time = formatClockMinute(nowMs, policy.timeZone);
-	if (next === undefined) return time;
-	return `${time} · next checkpoint ${formatClockMinute(next, policy.timeZone)}`;
-}
+
