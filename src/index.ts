@@ -433,8 +433,8 @@ export class TimeContextRuntime {
 						? `Checkpoint interval: ${policy.stampEveryMessage ? "every message" : `${Math.round(policy.checkpointIntervalMs / 60_000)} minutes`}`
 						: `Previous-activity threshold: ${Math.round(policy.previousActivityThresholdMs / 60_000)} minutes`;
 		const scopeNote = effective
-			? `written to the ${scope} layer; applies to subsequent messages`
-			: `written to the ${scope} layer; takes effect when the session activates (first user message)`;
+			? `written to ${targetPath}; applies to subsequent messages`
+			: `written to ${targetPath}; takes effect when the session activates (first user message)`;
 		ctx.ui.notify(`${summary} (${scopeNote})`);
 	}
 
@@ -518,12 +518,9 @@ export class TimeContextRuntime {
 		});
 		for (;;) {
 			const config = this.loadCurrentConfig(ctx);
-			const intervalLabel = config.stampEveryMessage ? "every message" : `${config.checkpointIntervalMinutes} min`;
-			const tzLabel = resolveTimeZone(config.timeZone) ?? config.timeZone;
-			const action = await ctx.ui.select(
-				`pi-time-context — interval: ${intervalLabel} · threshold: ${config.previousActivityThresholdMinutes} min · tz: ${tzLabel}`,
-				["interval", "threshold", "timeZone", "show", "exit"],
-			);
+			const action = await ctx.ui.select("pi-time-context", [
+				"interval", "threshold", "timeZone", "show", "exit",
+			]);
 			if (action === undefined || action === "exit") return;
 
 			if (action === "show") {
