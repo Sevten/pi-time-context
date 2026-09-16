@@ -5,8 +5,7 @@ A [Pi](https://github.com/earendil-works/pi) agent extension that gives conversa
 `pi-time-context` attaches a small timestamp block to outbound user messages and tool results at intervals — just enough for the model to always know the real time, without stamping every message:
 
 ```text
-sent_at: 2026-08-22 14:15 +08:00
-user_idle_for: 2h15m
+⟦TIME event=user_message_sent at=2026-08-22T14:15+08:00 idle=2h15m⟧
 
 Your original message or tool result...
 ```
@@ -16,9 +15,9 @@ Your original message or tool result...
 When the first message of a session is sent, it receives a baseline stamp marking the session start. After that, a stamp is added only once a 10-minute window (configurable) has passed, attached to the next outbound user message or tool result.
 
 - **Sparse by design** — a few well-placed stamps give the model a sense of real time without filling its context with timestamp noise; if you truly want a stamp on every message, one option turns it on.
-- **Idle-aware** — when the previous assistant or tool activity ended more than 30 minutes ago (configurable), the stamp also includes `user_idle_for`, telling the model the conversation has a gap.
-- **Deterministic** — each stamp is frozen the first time a message is sent. Retries, `/resume`, `/reload`, `/fork`, `/clone`, and `/tree` reproduce identical timestamps, and already-sent context never changes, keeping prompt caches warm.
-- **Visible, not intrusive** — the model sees the stamps; you see them too, as a dim one-line marker in the chat UI. Session data and the system prompt are never touched.
+- **Idle-aware** — when the previous assistant or tool activity ended more than 30 minutes ago (configurable), a user message stamp also includes `idle=2h15m`, telling the model the conversation has a gap.
+- **Deterministic** — each stamp's time and idle duration are frozen the first time a message is sent. Retries, `/resume`, `/reload`, `/fork`, `/clone`, and `/tree` reproduce identical timestamps, and already-sent context never changes, keeping prompt caches warm.
+- **Visible, not intrusive** — the model sees the stamps; you see them too, as a dim one-line marker in the chat UI. Session data is never touched; the only system-prompt change is one fixed line explaining the annotation format.
 
 ## Installation
 
@@ -34,7 +33,7 @@ Nothing to set up. In the chat UI, each stamped message shows a dim marker under
 sent_at 14:15 +08:00 · User idle for 2h15m
 ```
 
-That marker mirrors exactly what the model received — nothing extra is written into the session file. After a compaction drops the session's early messages, a `session_started_at:` line is prepended to the summary so the model still knows when the session began.
+That marker mirrors exactly what the model received — nothing extra is written into the session file. After a compaction drops the session's early messages, the summary carries a `⟦TIME event=context_summary_created covers_from=... covers_until=...⟧` annotation so the model still knows when the session began and when the covered activity ended.
 
 ### Configuring with `/time-config`
 
@@ -51,7 +50,7 @@ There are two ways to configure, both writing to the global config file (`~/.pi/
 ```
 
 - **Stamp a timestamp every** — presets (5, 10, 15, 30, 60, 120 min), `Every message`, or a custom value. Picking a concrete interval switches every-message mode off, and vice versa.
-- **Show idle gap after** — minimum idle gap before `user_idle_for` is added.
+- **Show idle gap after** — minimum idle gap before `idle=` is added to user message stamps.
 - **Show times in** — `local`, `UTC`, or any IANA time zone (`Asia/Shanghai`); custom values are typed inline.
 
 **Text commands**:

@@ -48,8 +48,10 @@ export function createCarrierDecision(input: DecisionInput): DecisionResult {
 	const previous = input.isBaseline ? undefined : input.previousActivity;
 	const gapMs = previous ? input.firstSentAtMs - previous.completedAtMs : undefined;
 	const backwards = gapMs !== undefined && gapMs < 0;
+	// Only user-message stamps carry idle; on tool results the gap is usually
+	// the tool's own execution time, which would read as misleading user idle.
 	const includeElapsed =
-		gapMs !== undefined && !backwards && gapMs > input.policy.previousActivityThresholdMs;
+		input.carrierKind === "user" && gapMs !== undefined && !backwards && gapMs > input.policy.previousActivityThresholdMs;
 
 	return {
 		decision: {
@@ -59,7 +61,6 @@ export function createCarrierDecision(input: DecisionInput): DecisionResult {
 			firstSentAtMs: input.firstSentAtMs,
 			checkpointIndex,
 			stamp: {
-				renderVersion: input.policy.renderVersion,
 				previousActivityKey: includeElapsed ? previous?.key : undefined,
 				elapsedMinutes: includeElapsed && gapMs !== undefined ? roundElapsedMinutes(gapMs) : undefined,
 			},

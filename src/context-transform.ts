@@ -6,7 +6,7 @@ import type {
 	PolicyRevisionV1,
 	SessionAnchorV1,
 } from "./types.js";
-import { renderDecision, renderSessionStart } from "./renderer.js";
+import { renderDecision, renderSummaryStamp } from "./renderer.js";
 
 export function prependStamp(message: AgentMessage, stampText: string): AgentMessage {
 	const stamp = { type: "text" as const, text: stampText };
@@ -35,19 +35,19 @@ export function transformContextMessages(
 	decisions: ReadonlyMap<string, CarrierDecisionV1>,
 	anchor: SessionAnchorV1,
 	revisions: readonly PolicyRevisionV1[] = [],
+	coverageUntilMs?: number,
 ): AgentMessage[] {
 	const next = [...messages];
 	let changed = false;
 
-	// After compaction the session's first stamped message may no longer be part
-	// of the context. Re-attach the session start time to the compaction summary
-	// so the model still knows when the session began.
+	// After compaction the context opens with the summary. Give it a ⟦TIME⟧
+	// annotation carrying the covered time span so the model knows when the
+	// session began and when the covered activity ended. The persisted entry is
+	// never touched.
 	if (next[0]?.role === "compactionSummary") {
-		const sessionStart = renderSessionStart(anchor);
-		if (sessionStart) {
-			next[0] = prependStamp(next[0], sessionStart);
-			changed = true;
-		}
+		const policy = resolvePolicy(anchor, revisions, coverageUntilMs ?? anchor.t0Ms);
+		next[0] = prependStamp(next[0], renderSummaryStamp(anchor, policy, coverageUntilMs));
+		changed = true;
 	}
 
 	for (const association of associations) {

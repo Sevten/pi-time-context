@@ -1,4 +1,4 @@
-import type { ContextEvent, ExtensionAPI, ExtensionCommandContext, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
+import type { BeforeAgentStartEvent, ContextEvent, ExtensionAPI, ExtensionCommandContext, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import { ActivityTracker } from "./activity-tracker.js";
 import {
 	associateCarrierMessages,
@@ -27,7 +27,7 @@ import {
 import { runTimeConfigMenu } from "./time-config-menu.js";
 import { transformContextMessages } from "./context-transform.js";
 import { copyForkMetadata } from "./fork-copy.js";
-import { renderDecision } from "./renderer.js";
+import { renderDecision, STAMP_MARKER, SYSTEM_PROMPT_NOTE } from "./renderer.js";
 import { resolvePolicy } from "./policy-revisions.js";
 import type {
 	AgentMessage,
@@ -36,7 +36,7 @@ import type {
 	ToolExecutionEndEvent,
 	ToolExecutionStartEvent,
 } from "./pi-types.js";
-import { carrierEntryIds, isSessionMessageEntry, recoverState } from "./state.js";
+import { carrierEntryIds, computeCoverageUntilMs, isSessionMessageEntry, recoverState } from "./state.js";
 import { registerDecisionRenderer } from "./visibility.js";
 import {
 	ACTIVITY_FACTS_ENTRY,
@@ -320,8 +320,19 @@ export class TimeContextRuntime {
 				this.state.decisionsByCarrierId,
 				anchor,
 				this.state.revisions,
+				computeCoverageUntilMs(ctx.sessionManager.getBranch(), this.state.activitiesByKey),
 			),
 		};
+	}
+
+	/**
+	 * Append the ⟦TIME⟧ explanation to the system prompt exactly once per
+	 * session; the marker substring makes the append idempotent across repeated
+	 * before_agent_start firings.
+	 */
+	onBeforeAgentStart(event: BeforeAgentStartEvent): { systemPrompt: string } | undefined {
+		if (event.systemPrompt.includes(STAMP_MARKER)) return undefined;
+		return { systemPrompt: `${event.systemPrompt}\n\n${SYSTEM_PROMPT_NOTE}` };
 	}
 
 	private appendRevision(policy: TimePolicyV1): void {
@@ -521,6 +532,7 @@ export function registerTimeContextExtension(pi: ExtensionAPI, options: RuntimeO
 	});
 	pi.on("session_start", (event, ctx) => runtime.onSessionStart(event, ctx));
 	pi.on("session_tree", (_event, ctx) => runtime.onTreeChanged(ctx));
+	pi.on("before_agent_start", (event) => runtime.onBeforeAgentStart(event));
 	pi.on("context", (event, ctx) => runtime.onContext(event, ctx));
 	pi.on("message_start", (event) => runtime.onMessageStart(event.message));
 	pi.on("message_update", (event) => runtime.onMessageUpdate(event.message, event.assistantMessageEvent));

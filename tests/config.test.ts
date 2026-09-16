@@ -36,7 +36,6 @@ describe("configuration", () => {
 			previousActivityThresholdMs: 30 * 60_000,
 			timeZone: "UTC",
 			stampEveryMessage: true,
-			renderVersion: 1,
 		});
 	});
 

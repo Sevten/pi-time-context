@@ -119,7 +119,6 @@ export function freezePolicy(config: TimeContextConfig, warn?: WarningSink): Tim
 		checkpointIntervalMs: config.checkpointIntervalMinutes * MINUTE_MS,
 		previousActivityThresholdMs: config.previousActivityThresholdMinutes * MINUTE_MS,
 		timeZone: timeZone ?? "UTC",
-		renderVersion: 1,
 		stampEveryMessage: config.stampEveryMessage,
 	};
 }

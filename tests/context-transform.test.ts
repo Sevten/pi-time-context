@@ -47,7 +47,7 @@ describe("context transform", () => {
 			carrierKind: "user",
 			firstSentAtMs: 0,
 			checkpointIndex: 0,
-			stamp: { renderVersion: 1 },
+			stamp: {},
 		};
 		const decisions = new Map([["u1", decision]]);
 		const first = transformContextMessages([message], [association], decisions, anchor());
@@ -57,7 +57,22 @@ describe("context transform", () => {
 		expect(message.content).toBe("hello");
 	});
 
-	it("stamps the compaction summary with the session start time", () => {
+	it("stamps the compaction summary with the covered time span", () => {
+		const summary: AgentMessage = {
+			role: "compactionSummary",
+			summary: "Earlier conversation summary",
+			tokensBefore: 1000,
+			timestamp: 5 * 60_000,
+		};
+		const transformed = transformContextMessages([summary], [], new Map(), anchor(0), [], 90 * 60_000);
+		if (transformed[0]?.role !== "compactionSummary") throw new Error("Expected compaction summary");
+		expect(transformed[0].summary).toBe(
+			"⟦TIME event=context_summary_created covers_from=1970-01-01T00:00+00:00 covers_until=1970-01-01T01:30+00:00⟧\n\nEarlier conversation summary",
+		);
+		expect(summary.summary).toBe("Earlier conversation summary");
+	});
+
+	it("omits covers_until when the covered boundary is unknown", () => {
 		const summary: AgentMessage = {
 			role: "compactionSummary",
 			summary: "Earlier conversation summary",
@@ -67,9 +82,8 @@ describe("context transform", () => {
 		const transformed = transformContextMessages([summary], [], new Map(), anchor(0));
 		if (transformed[0]?.role !== "compactionSummary") throw new Error("Expected compaction summary");
 		expect(transformed[0].summary).toBe(
-			"session_started_at: 1970-01-01 00:00 +00:00\n\nEarlier conversation summary",
+			"⟦TIME event=context_summary_created covers_from=1970-01-01T00:00+00:00⟧\n\nEarlier conversation summary",
 		);
-		expect(summary.summary).toBe("Earlier conversation summary");
 	});
 
 	it("leaves messages untouched when the context does not start with a compaction summary", () => {

@@ -127,3 +127,39 @@ export function carrierEntryIds(branch: readonly SessionEntry[]): Set<string> {
 	}
 	return ids;
 }
+
+/**
+ * When the covered activity ended, i.e. the time boundary of the content the
+ * latest compaction summary replaced. Kept entries start at the compaction's
+ * firstKeptEntryId, so covered entries are the branch entries sitting before
+ * that position. The covered set is a fixed branch prefix, so recomputing this
+ * per request is deterministic and needs no persistence.
+ */
+export function computeCoverageUntilMs(
+	branch: readonly SessionEntry[],
+	activities: ReadonlyMap<string, ActivityV1>,
+): number | undefined {
+	let cutIndex = -1;
+	for (let index = 0; index < branch.length; index++) {
+		const entry = branch[index];
+		if (entry.type !== "compaction") continue;
+		const keptIndex = branch.findIndex((candidate) => candidate.id === entry.firstKeptEntryId);
+		cutIndex = keptIndex === -1 ? index : Math.min(keptIndex, index);
+	}
+	if (cutIndex === -1) return undefined;
+
+	const coveredIds = new Set<string>();
+	for (let index = 0; index < cutIndex; index++) {
+		const entry = branch[index];
+		if (isSessionMessageEntry(entry)) coveredIds.add(entry.id);
+	}
+
+	let latest: number | undefined;
+	for (const activity of activities.values()) {
+		const entryId = activity.kind === "tool" ? activity.toolResultEntryId : activity.messageEntryId;
+		if (!entryId || !coveredIds.has(entryId)) continue;
+		const completedAtMs = activity.kind === "user" ? activity.processedAtMs : activity.completedAtMs;
+		if (latest === undefined || completedAtMs > latest) latest = completedAtMs;
+	}
+	return latest;
+}

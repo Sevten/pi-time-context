@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0] - 2026-09-17
+
+### Changed
+
+- Stamps are now a self-describing `⟦TIME event=... at=...⟧` annotation instead of a bare `sent_at:` line, so the model can no longer mistake them for part of the message or tool output. A fixed one-line explanation of the format is appended to the system prompt.
+- Tool result stamps no longer carry an idle duration; a gap on a tool result is usually the tool's own execution time, and labeling it as user idle was misleading. User message stamps keep `idle=` when the previous activity ended more than the configured threshold ago.
+- Timestamp values and idle durations are frozen exactly as before; after upgrading, existing sessions simply re-render their stamps in the new format.
+
+### Added
+
+- After a compaction, the summary now carries a `⟦TIME event=context_summary_created covers_from=... covers_until=...⟧` annotation telling the model when the session began and when the summarized activity ended — not just the session start.
+
 ## [0.1.0] - 2026-09-11
 
 First release of `pi-time-context`, a Pi agent extension that gives conversations wall-clock context.

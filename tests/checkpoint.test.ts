@@ -28,7 +28,7 @@ describe("checkpoint decisions", () => {
 			isBaseline: true,
 		});
 		expect(result.decision.checkpointIndex).toBe(0);
-		expect(result.decision.stamp).toEqual({ renderVersion: 1 });
+		expect(result.decision.stamp).toEqual({});
 	});
 
 	it("uses exact anchored interval boundaries", () => {
@@ -64,9 +64,8 @@ describe("checkpoint decisions", () => {
 			isBaseline: false,
 			previousActivity: { key: "assistant:a", completedAtMs: 0 },
 		});
-		expect(exact.decision.stamp).toEqual({ renderVersion: 1 });
+		expect(exact.decision.stamp).toEqual({});
 		expect(over.decision.stamp).toEqual({
-			renderVersion: 1,
 			previousActivityKey: "assistant:a",
 			elapsedMinutes: 30,
 		});
@@ -84,7 +83,7 @@ describe("checkpoint decisions", () => {
 			previousActivity: { key: "assistant:future", completedAtMs: INTERVAL + 1 },
 		});
 		expect(result.clockAnomaly).toBe("backwards");
-		expect(result.decision.stamp).toEqual({ renderVersion: 1 });
+		expect(result.decision.stamp).toEqual({});
 	});
 });
 
@@ -130,7 +129,6 @@ describe("every-message mode", () => {
 			previousActivity: { key: "assistant:a", completedAtMs: 0 },
 		});
 		expect(result.decision.stamp).toEqual({
-			renderVersion: 1,
 			previousActivityKey: "assistant:a",
 			elapsedMinutes: 30,
 		});

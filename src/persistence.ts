@@ -38,8 +38,8 @@ function parsePolicy(data: unknown, warn?: WarningSink): TimePolicyV1 | undefine
 	if (
 		!isPositiveFinite(raw.checkpointIntervalMs) ||
 		!isPositiveFinite(raw.previousActivityThresholdMs) ||
-		(typeof raw.timeZone !== "string" || !resolveTimeZone(raw.timeZone)) ||
-		raw.renderVersion !== 1
+		typeof raw.timeZone !== "string" ||
+		!resolveTimeZone(raw.timeZone)
 	) {
 		return undefined;
 	}
@@ -47,7 +47,6 @@ function parsePolicy(data: unknown, warn?: WarningSink): TimePolicyV1 | undefine
 		checkpointIntervalMs: raw.checkpointIntervalMs,
 		previousActivityThresholdMs: raw.previousActivityThresholdMs,
 		timeZone: raw.timeZone,
-		renderVersion: 1,
 		stampEveryMessage: raw.stampEveryMessage === true,
 	};
 }
@@ -204,7 +203,6 @@ export function parseCarrierDecision(data: unknown, warn?: WarningSink): Carrier
 	}
 	if (
 		!isRecord(data.stamp) ||
-		data.stamp.renderVersion !== 1 ||
 		(data.stamp.previousActivityKey !== undefined && typeof data.stamp.previousActivityKey !== "string") ||
 		(data.stamp.elapsedMinutes !== undefined &&
 			(typeof data.stamp.elapsedMinutes !== "number" ||
@@ -221,7 +219,6 @@ export function parseCarrierDecision(data: unknown, warn?: WarningSink): Carrier
 		firstSentAtMs: data.firstSentAtMs,
 		checkpointIndex: data.checkpointIndex,
 		stamp: {
-			renderVersion: 1,
 			previousActivityKey: data.stamp.previousActivityKey,
 			elapsedMinutes: data.stamp.elapsedMinutes,
 		},

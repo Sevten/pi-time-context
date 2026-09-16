@@ -29,7 +29,7 @@ function decision(carrierEntryId: string, firstSentAtMs: number): CarrierDecisio
 		carrierKind: "user",
 		firstSentAtMs,
 		checkpointIndex: 0,
-		stamp: { renderVersion: 1 },
+		stamp: {},
 	};
 }
 

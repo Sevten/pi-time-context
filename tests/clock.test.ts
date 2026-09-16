@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	formatIsoMinute,
 	formatLocalMinute,
 	isValidEpochMs,
 	readClock,
@@ -14,6 +15,15 @@ describe("clock", () => {
 		expect(formatLocalMinute(value, "Asia/Shanghai")).toBe("2026-08-22 14:15 +08:00");
 		expect(formatLocalMinute(Date.UTC(2026, 0, 22, 6, 15), "America/New_York")).toBe(
 			"2026-01-22 01:15 -05:00",
+		);
+	});
+
+	it("formats ISO minute values with numeric offsets", () => {
+		const value = Date.UTC(2026, 7, 22, 6, 15, 59);
+		expect(formatIsoMinute(value, "UTC")).toBe("2026-08-22T06:15+00:00");
+		expect(formatIsoMinute(value, "Asia/Shanghai")).toBe("2026-08-22T14:15+08:00");
+		expect(formatIsoMinute(Date.UTC(2026, 0, 22, 6, 15), "America/New_York")).toBe(
+			"2026-01-22T01:15-05:00",
 		);
 	});
 

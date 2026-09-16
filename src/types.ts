@@ -16,7 +16,6 @@ export interface TimePolicyV1 {
 	checkpointIntervalMs: number;
 	previousActivityThresholdMs: number;
 	timeZone: string;
-	renderVersion: 1;
 	stampEveryMessage: boolean;
 }
 
@@ -72,7 +71,6 @@ export interface ActivityFactsV1 {
 }
 
 export interface CarrierStampV1 {
-	renderVersion: 1;
 	previousActivityKey?: string;
 	elapsedMinutes?: number;
 }

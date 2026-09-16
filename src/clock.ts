@@ -26,11 +26,16 @@ export function resolveTimeZone(configured: string): string | undefined {
 	}
 }
 
-export function formatLocalMinute(epochMs: number, timeZone: string): string {
+interface MinuteParts {
+	date: string;
+	time: string;
+	offset: string;
+}
+
+function resolveMinuteParts(epochMs: number, timeZone: string): MinuteParts {
 	if (!isValidEpochMs(epochMs)) {
 		throw new RangeError("Cannot format an invalid epoch timestamp");
 	}
-
 	const parts = new Intl.DateTimeFormat("en-US", {
 		calendar: "gregory",
 		numberingSystem: "latn",
@@ -57,7 +62,18 @@ export function formatLocalMinute(epochMs: number, timeZone: string): string {
 	if (!/^[+-]\d{2}:\d{2}$/.test(offset)) {
 		throw new RangeError(`Time zone ${timeZone} did not produce a numeric UTC offset`);
 	}
-	return `${year}-${month}-${day} ${hour}:${minute} ${offset}`;
+	return { date: `${year}-${month}-${day}`, time: `${hour}:${minute}`, offset };
+}
+
+export function formatLocalMinute(epochMs: number, timeZone: string): string {
+	const { date, time, offset } = resolveMinuteParts(epochMs, timeZone);
+	return `${date} ${time} ${offset}`;
+}
+
+/** ISO 8601 with minute precision and a numeric UTC offset, e.g. 2026-09-14T15:48+08:00. */
+export function formatIsoMinute(epochMs: number, timeZone: string): string {
+	const { date, time, offset } = resolveMinuteParts(epochMs, timeZone);
+	return `${date}T${time}${offset}`;
 }
 
 export function formatClockMinute(epochMs: number, timeZone: string): string {

@@ -126,7 +126,7 @@ describe("runtime lifecycle", () => {
 		session.appendMessage("u1", first);
 		clock.value = t0 + 100;
 		const baseline = runtime.onContext({ type: "context", messages: [first] }, context);
-		expect(firstContentText(baseline.messages[0])).toBe("sent_at: 2026-08-22 06:15 +00:00");
+		expect(firstContentText(baseline.messages[0])).toBe("\u27e6TIME event=user_message_sent at=2026-08-22T06:15+00:00\u27e7");
 		expect(carrierContent(first)).toBe("first");
 
 		const second = user(2, "second");
@@ -144,7 +144,7 @@ describe("runtime lifecycle", () => {
 		runtime.onMessageEnd(endEvent(third), context);
 		session.appendMessage("u3", third);
 		const nextCarrier = runtime.onContext({ type: "context", messages: [first, second, third] }, context);
-		expect(firstContentText(nextCarrier.messages[2])).toBe("sent_at: 2026-08-22 06:46 +00:00");
+		expect(firstContentText(nextCarrier.messages[2])).toBe("\u27e6TIME event=user_message_sent at=2026-08-22T06:46+00:00\u27e7");
 
 		const decisions = session.customData(CARRIER_DECISION_ENTRY) as CarrierDecisionV1[];
 		expect(decisions).toHaveLength(3);
@@ -165,7 +165,7 @@ describe("runtime lifecycle", () => {
 		runtime.onMessageEnd(endEvent(second), context);
 		session.appendMessage("u2", second);
 		const transformed = runtime.onContext({ type: "context", messages: [first, second] }, context);
-		expect(firstContentText(transformed.messages[0])).toBe("sent_at: 2026-08-22 06:00 +00:00");
+		expect(firstContentText(transformed.messages[0])).toBe("\u27e6TIME event=user_message_sent at=2026-08-22T06:00+00:00\u27e7");
 		expect(carrierContent(transformed.messages[1])).toBe("second");
 		const decisions = session.customData(CARRIER_DECISION_ENTRY) as CarrierDecisionV1[];
 		expect(decisions.find((item) => item.carrierEntryId === "u1")?.stamp).not.toBeNull();
@@ -214,8 +214,65 @@ describe("runtime lifecycle", () => {
 		const anchors = session.customData(SESSION_ANCHOR_ENTRY) as SessionAnchorV1[];
 		expect(anchors).toHaveLength(1);
 		expect(anchors[0]?.origin).toBe("legacy_activation");
-		expect(firstContentText(migrated.messages[1])).toBe("sent_at: 2026-08-22 06:31 +00:00");
+		expect(firstContentText(migrated.messages[1])).toBe("\u27e6TIME event=user_message_sent at=2026-08-22T06:31+00:00\u27e7");
 		expect(session.customData(CARRIER_DECISION_ENTRY)).toHaveLength(1);
+	});
+
+	it("appends the system prompt note once and is idempotent", async () => {
+		const clock = new MutableClock(0);
+		const { runtime } = createHarness(clock);
+		const base = "You are pi.";
+		const first = runtime.onBeforeAgentStart({ type: "before_agent_start", prompt: "hi", systemPrompt: base } as never);
+		expect(first?.systemPrompt).toContain("\u27e6TIME event=...");
+		expect(first?.systemPrompt.startsWith("You are pi.")).toBe(true);
+
+		const second = runtime.onBeforeAgentStart({
+			type: "before_agent_start",
+			prompt: "hi",
+			systemPrompt: first?.systemPrompt ?? "",
+		} as never);
+		expect(second).toBeUndefined();
+	});
+
+	it("stamps a compaction summary with the covered span deterministically", async () => {
+		const t0 = Date.UTC(2026, 7, 22, 6, 0);
+		const clock = new MutableClock(t0);
+		const { runtime, session, context } = createHarness(clock);
+		await runtime.onSessionStart(startEvent(), context);
+		const prompt = user(1, "first");
+		runtime.onMessageEnd(endEvent(prompt), context);
+		session.appendMessage("u1", prompt);
+		runtime.onContext({ type: "context", messages: [prompt] }, context);
+		const response = assistant(2, "done");
+		session.appendMessage("a1", response);
+		runtime.onTurnEnd(context);
+
+		// A compaction lands after a1; everything before it is covered.
+		session.entries.push({
+			type: "compaction",
+			id: "c1",
+			parentId: "a1",
+			timestamp: new Date(t0 + 60 * 60_000).toISOString(),
+			summary: "summary of earlier talk",
+			firstKeptEntryId: "a1",
+			tokensBefore: 500,
+		} as SessionEntry);
+		const summaryMessage = {
+			role: "compactionSummary",
+			summary: "summary of earlier talk",
+			tokensBefore: 500,
+			timestamp: t0 + 60 * 60_000,
+		} as AgentMessage;
+
+		const first = runtime.onContext({ type: "context", messages: [summaryMessage] }, context);
+		const second = runtime.onContext({ type: "context", messages: [summaryMessage] }, context);
+		for (const run of [first, second]) {
+			const message = run.messages[0];
+			if (message?.role !== "compactionSummary") throw new Error("Expected compaction summary");
+			expect(message.summary).toBe(
+				"\u27e6TIME event=context_summary_created covers_from=2026-08-22T06:00+00:00 covers_until=2026-08-22T06:00+00:00\u27e7\n\nsummary of earlier talk",
+			);
+		}
 	});
 
 	it("batches user and assistant facts at turn end without message bodies", async () => {
@@ -294,7 +351,7 @@ describe("runtime lifecycle", () => {
 			{ type: "context", messages: [prompt, response, resultA, resultB] },
 			context,
 		);
-		expect(firstContentText(transformed.messages[2])).toBe("sent_at: 2026-08-22 06:40 +00:00");
+		expect(firstContentText(transformed.messages[2])).toBe("\u27e6TIME event=tool_result_returned at=2026-08-22T06:40+00:00\u27e7");
 		expect(firstContentText(transformed.messages[3])).toBe("result");
 		const decisions = session.customData(CARRIER_DECISION_ENTRY) as CarrierDecisionV1[];
 		expect(decisions.find((item) => item.carrierEntryId === "result-a")?.stamp).not.toBeNull();

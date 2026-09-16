@@ -1,6 +1,6 @@
 {
   "name": "@sevten/pi-time-context",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pi extension that gives conversations wall-clock context: sparse, deterministic timestamps and idle gaps for user messages and tool results.",
   "repository": {
     "type": "git",

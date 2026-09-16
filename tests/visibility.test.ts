@@ -20,14 +20,14 @@ describe("decisionDisplayText", () => {
 
 	it("renders the local timestamp and elapsed time", () => {
 		const text = decisionDisplayText(
-			decision({ renderVersion: 1, previousActivityKey: "assistant:a", elapsedMinutes: 135 }, 0),
+			decision({ previousActivityKey: "assistant:a", elapsedMinutes: 135 }, 0),
 		)!;
 		expect(text).toContain("sent_at");
 		expect(text).toContain("2h15m");
 	});
 
 	it("omits the elapsed segment when absent", () => {
-		const text = decisionDisplayText(decision({ renderVersion: 1 }))??"";
+		const text = decisionDisplayText(decision({}))??"";
 		expect(text).toContain("sent_at");
 		expect(text).not.toContain("User idle for");
 	});
