@@ -12,9 +12,11 @@ import {
 	ACTIVITY_FACTS_ENTRY,
 	CARRIER_DECISION_ENTRY,
 	SESSION_ANCHOR_ENTRY,
+	UI_STAMP_ENTRY,
 	type ActivityFactsV1,
 	type CarrierDecisionV1,
 	type SessionAnchorV1,
+	type UiStampV1,
 } from "../src/types.js";
 import { assistant, assistantWithTools, MutableClock, toolResult, user } from "./helpers.js";
 
@@ -273,6 +275,73 @@ describe("runtime lifecycle", () => {
 				"\u27e6TIME event=context_summary_created covers_from=2026-08-22T06:00+00:00 covers_until=2026-08-22T06:00+00:00\u27e7\n\nsummary of earlier talk",
 			);
 		}
+	});
+
+	describe("ui stamps", () => {
+		const inputEvent = (text: string) => ({ type: "input", text, source: "interactive" }) as never;
+
+		function stampEntries(session: { entries: { type: string; customType?: string; id: string }[] }) {
+			return session.entries.filter(
+				(entry): entry is { type: "custom"; customType: string; id: string } =>
+					entry.type === "custom" && entry.customType === UI_STAMP_ENTRY,
+			);
+		}
+
+		it("writes a self-contained baseline stamp on the first input, before the message exists", async () => {
+			const t0 = Date.UTC(2026, 7, 22, 6, 0);
+			const clock = new MutableClock(t0);
+			const { runtime, session, context } = createHarness(clock);
+			await runtime.onSessionStart(startEvent(), context);
+
+			clock.value = t0 + 1;
+			runtime.onInput(inputEvent("hello"), context);
+			expect(stampEntries(session)).toHaveLength(1);
+			const stampData = session.customData(UI_STAMP_ENTRY) as UiStampV1[];
+			expect(stampData[0]).toEqual({ version: 1, sentAtMs: t0 + 1 });
+
+			const prompt = user(1, "hello");
+			runtime.onMessageEnd(endEvent(prompt), context);
+			session.appendMessage("u1", prompt);
+			clock.value = t0 + 2;
+			runtime.onContext({ type: "context", messages: [prompt] }, context);
+			expect(runtime.carrierHasUiStamp("u1")).toBe(true);
+		});
+
+		it("writes nothing when the checkpoint is not due", async () => {
+			const t0 = Date.UTC(2026, 7, 22, 6, 0);
+			const clock = new MutableClock(t0);
+			const { runtime, session, context } = createHarness(clock);
+			await runtime.onSessionStart(startEvent(), context);
+
+			clock.value = t0 + 1;
+			runtime.onInput(inputEvent("first"), context);
+			const prompt = user(1, "first");
+			runtime.onMessageEnd(endEvent(prompt), context);
+			session.appendMessage("u1", prompt);
+			runtime.onContext({ type: "context", messages: [prompt] }, context);
+			expect(stampEntries(session)).toHaveLength(1);
+
+			clock.value = t0 + 5 * 60_000;
+			runtime.onInput(inputEvent("second"), context);
+			expect(stampEntries(session)).toHaveLength(1);
+		});
+
+		it("stops mapping a stamp once an assistant message intervenes", async () => {
+			const t0 = Date.UTC(2026, 7, 22, 6, 0);
+			const clock = new MutableClock(t0);
+			const { runtime, session, context } = createHarness(clock);
+			await runtime.onSessionStart(startEvent(), context);
+
+			clock.value = t0 + 1;
+			runtime.onInput(inputEvent("doomed"), context);
+			const reply = assistant(2, "reply");
+			session.appendMessage("a1", reply);
+			runtime.onMessageEnd(endEvent(reply), context);
+			runtime.onTreeChanged(context);
+
+			expect(stampEntries(session)).toHaveLength(1);
+			expect(runtime.carrierHasUiStamp("a1")).toBe(false);
+		});
 	});
 
 	it("batches user and assistant facts at turn end without message bodies", async () => {

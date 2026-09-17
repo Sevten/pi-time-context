@@ -3,6 +3,7 @@ import type { AgentMessage } from "./pi-types.js";
 export const SESSION_ANCHOR_ENTRY = "pi-time-context/session-anchor";
 export const ACTIVITY_FACTS_ENTRY = "pi-time-context/activity-facts";
 export const CARRIER_DECISION_ENTRY = "pi-time-context/carrier-decision";
+export const UI_STAMP_ENTRY = "pi-time-context/ui-stamp";
 export const POLICY_REVISIONS_ENTRY = "pi-time-context/policy-revision";
 
 export type AnchorOrigin = "first_user_processed" | "legacy_activation";
@@ -82,6 +83,22 @@ export interface CarrierDecisionV1 {
 	firstSentAtMs: number;
 	checkpointIndex: number;
 	stamp: CarrierStampV1 | null;
+}
+
+/**
+ * Positional marker appended when the user submits input, i.e. before the user
+ * message entry exists. Purely a UI anchor: it never enters the model context.
+ * It is self-contained — written only when the checkpoint policy predicts a
+ * stamp, carrying the exact display data — because the TUI renders a custom
+ * entry exactly once, at append time, before the message or its decision
+ * exist. Inputs that never become messages (rare: handled input, abort before
+ * persistence) leave a line with no message under it; that is accepted
+ * cosmetic noise, and extension commands do not fire input events at all.
+ */
+export interface UiStampV1 {
+	version: 1;
+	sentAtMs: number;
+	elapsedMinutes?: number;
 }
 
 export interface CompletedActivityRef {

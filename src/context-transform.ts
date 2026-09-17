@@ -54,7 +54,7 @@ export function transformContextMessages(
 		const decision = decisions.get(association.entryId);
 		if (!decision) continue;
 		const policy = resolvePolicy(anchor, revisions, decision.firstSentAtMs);
-		const rendered = renderDecision(decision, policy);
+		const rendered = renderDecision(decision, policy.timeZone);
 		if (!rendered) continue;
 		const message = next[association.messageIndex];
 		if (!message) continue;

@@ -26,10 +26,10 @@ export function formatElapsedMinutes(totalMinutes: number): string {
 	return `${hours}h${minutes}m`;
 }
 
-export function renderDecision(decision: CarrierDecisionV1, policy: TimePolicyV1): string | undefined {
+export function renderDecision(decision: CarrierDecisionV1, timeZone: string): string | undefined {
 	if (!decision.stamp) return undefined;
 	const event = decision.carrierKind === "user" ? "user_message_sent" : "tool_result_returned";
-	const parts = [`⟦TIME event=${event}`, `at=${formatIsoMinute(decision.firstSentAtMs, policy.timeZone)}`];
+	const parts = [`⟦TIME event=${event}`, `at=${formatIsoMinute(decision.firstSentAtMs, timeZone)}`];
 	// Tool results never carry idle: a gap on a tool result is usually the
 	// tool's own execution time, not user inactivity.
 	if (decision.carrierKind === "user" && decision.stamp.elapsedMinutes !== undefined) {

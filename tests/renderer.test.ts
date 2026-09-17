@@ -24,29 +24,26 @@ function decision(carrierKind: CarrierDecisionV1["carrierKind"], stamp: CarrierD
 
 describe("renderer", () => {
 	it("renders a user stamp with idle in stable field order", () => {
-		const rendered = renderDecision(decision("user", { elapsedMinutes: 135 }), {
-			...anchor().policy,
-			timeZone: "Asia/Shanghai",
-		});
+		const rendered = renderDecision(decision("user", { elapsedMinutes: 135 }), "Asia/Shanghai");
 		expect(rendered).toBe("⟦TIME event=user_message_sent at=2026-08-22T14:15+08:00 idle=2h15m⟧");
 	});
 
 	it("renders a user stamp without idle when absent", () => {
-		const rendered = renderDecision(decision("user", {}), anchor().policy);
+		const rendered = renderDecision(decision("user", {}), anchor().policy.timeZone);
 		expect(rendered).toBe("⟦TIME event=user_message_sent at=2026-08-22T06:15+00:00⟧");
 	});
 
 	it("never renders idle on tool results, even if a legacy stamp carries it", () => {
-		const rendered = renderDecision(decision("tool_result", { elapsedMinutes: 135 }), anchor().policy);
+		const rendered = renderDecision(decision("tool_result", { elapsedMinutes: 135 }), anchor().policy.timeZone);
 		expect(rendered).toBe("⟦TIME event=tool_result_returned at=2026-08-22T06:15+00:00⟧");
 	});
 
 	it("renders no text for a null decision", () => {
-		expect(renderDecision(decision("user", null), anchor().policy)).toBeUndefined();
+		expect(renderDecision(decision("user", null), anchor().policy.timeZone)).toBeUndefined();
 	});
 
 	it("uses the mathematical white square brackets U+27E6/U+27E7", () => {
-		const rendered = renderDecision(decision("user", {}), anchor().policy)!;
+		const rendered = renderDecision(decision("user", {}), anchor().policy.timeZone)!;
 		expect(rendered.codePointAt(0)).toBe(0x27e6);
 		expect(rendered.codePointAt(rendered.length - 1)).toBe(0x27e7);
 		expect(rendered).not.toContain("[TIME");

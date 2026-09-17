@@ -1,4 +1,4 @@
-import type { BeforeAgentStartEvent, ContextEvent, ExtensionAPI, ExtensionCommandContext, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
+import type { BeforeAgentStartEvent, ContextEvent, ExtensionAPI, ExtensionCommandContext, ExtensionContext, InputEvent, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import { ActivityTracker } from "./activity-tracker.js";
 import {
 	associateCarrierMessages,
@@ -36,7 +36,13 @@ import type {
 	ToolExecutionEndEvent,
 	ToolExecutionStartEvent,
 } from "./pi-types.js";
-import { carrierEntryIds, computeCoverageUntilMs, isSessionMessageEntry, recoverState } from "./state.js";
+import {
+	carrierEntryIds,
+	computeCoverageUntilMs,
+	computeUiStampAssociations,
+	isSessionMessageEntry,
+	recoverState,
+} from "./state.js";
 import { registerDecisionRenderer } from "./visibility.js";
 import {
 	ACTIVITY_FACTS_ENTRY,
@@ -51,6 +57,8 @@ import {
 	type RecoveredState,
 	type SessionAnchorV1,
 	type TimePolicyV1,
+	UI_STAMP_ENTRY,
+	type UiStampV1,
 } from "./types.js";
 
 export interface RuntimeOptions {
@@ -84,6 +92,10 @@ export class TimeContextRuntime {
 	private refreshedEntryTailId?: string;
 	private refreshedBranchCount = -1;
 	private refreshedBranchTailId?: string;
+	private uiStampToCarrier = new Map<string, string>();
+	private carriersWithUiStamp = new Set<string>();
+	/** Time zone of a predicted stamp whose anchor is not yet persisted. */
+	private uiStampTimeZone?: string;
 
 	constructor(pi: ExtensionAPI, options: RuntimeOptions = {}) {
 		this.pi = pi;
@@ -120,6 +132,9 @@ export class TimeContextRuntime {
 		}
 
 		this.state = recoverState(entries, branch, (message) => this.warn(message));
+		const uiStamps = computeUiStampAssociations(branch);
+		this.uiStampToCarrier = uiStamps.stampToCarrier;
+		this.carriersWithUiStamp = uiStamps.carriersWithStamp;
 		this.refreshedEntryCount = entries.length;
 		this.refreshedEntryTailId = entryTailId;
 		this.refreshedBranchCount = branch.length;
@@ -194,6 +209,88 @@ export class TimeContextRuntime {
 		this.pi.appendEntry(SESSION_ANCHOR_ENTRY, anchor);
 		this.state.anchor = anchor;
 		this.baselinePending = true;
+	}
+
+	/** Test/lookup view: whether a valid UI stamp precedes this carrier. */
+	carrierHasUiStamp(carrierEntryId: string): boolean {
+		return this.carriersWithUiStamp.has(carrierEntryId);
+	}
+
+	/**
+	 * The time zone the model context renders `atMs` in — the same resolvePolicy
+	 * chain the context transform uses, so TUI lines match the model's view.
+	 */
+	timeZoneFor(atMs: number): string | undefined {
+		const anchor = this.state.anchor;
+		if (anchor) return resolvePolicy(anchor, this.state.revisions, atMs).timeZone;
+		return this.uiStampTimeZone;
+	}
+
+	/**
+	 * Append a self-contained UI stamp before the user message entry exists.
+	 * The TUI renders a custom entry exactly once, at append time, so the entry
+	 * must carry its display data: we predict the checkpoint stamp here with
+	 * the same logic the context-time decision uses. Baseline stamps freeze to
+	 * t0 exactly like the persisted decision; steering inputs are skipped
+	 * because the model stamp may land on a tool-result carrier instead.
+	 */
+	onInput(event: InputEvent, ctx: ExtensionContext): { action: "continue" } {
+		const sentAtMs = readClock(this.clock);
+		if (sentAtMs === undefined || event.streamingBehavior !== undefined) return { action: "continue" };
+		this.refresh(ctx);
+
+		let anchor = this.state.anchor;
+		let isBaseline = this.baselinePending;
+		if (!anchor) {
+			// First input of a fresh session: the anchor is created at message_end,
+			// but its t0 will be this submission. Predict it so the very first
+			// message already shows its stamp above.
+			const hasHistoricalUser = ctx.sessionManager
+				.getBranch()
+				.some((entry) => isSessionMessageEntry(entry) && entry.message.role === "user");
+			if (hasHistoricalUser || this.state.decisionsByCarrierId.size > 0) return { action: "continue" };
+			anchor = {
+				version: 1,
+				t0Ms: sentAtMs,
+				origin: "first_user_processed",
+				policy: freezePolicy(this.loadConfigWithWarnings().config, (message) => this.warn(message)),
+			};
+			isBaseline = true;
+		}
+
+		const firstSentAtMs = isBaseline ? anchor.t0Ms : sentAtMs;
+		const policy = resolvePolicy(anchor, this.state.revisions, firstSentAtMs);
+		const previousActivity = isBaseline
+			? undefined
+			: findPreviousCompletedActivity(
+				{
+					messageIndex: -1,
+					entryId: "ui-stamp-pending",
+					kind: "user",
+					message: { role: "user", content: "", timestamp: sentAtMs },
+				},
+				this.state.activitiesByKey,
+			);
+		const { decision } = createCarrierDecision({
+			carrierEntryId: "ui-stamp-pending",
+			carrierKind: "user",
+			firstSentAtMs,
+			t0Ms: anchor.t0Ms,
+			policy,
+			lastStampedCheckpointIndex: this.state.lastStampedCheckpointIndex,
+			isBaseline,
+			previousActivity,
+		});
+		if (!decision.stamp) return { action: "continue" };
+		this.uiStampTimeZone = policy.timeZone;
+		this.pi.appendEntry(UI_STAMP_ENTRY, {
+			version: 1,
+			sentAtMs: decision.firstSentAtMs,
+			...(decision.stamp.elapsedMinutes !== undefined
+				? { elapsedMinutes: decision.stamp.elapsedMinutes }
+				: {}),
+		} satisfies UiStampV1);
+		return { action: "continue" };
 	}
 
 	onMessageStart(message: AgentMessage): void {
@@ -525,7 +622,10 @@ export class TimeContextRuntime {
 
 export function registerTimeContextExtension(pi: ExtensionAPI, options: RuntimeOptions = {}): TimeContextRuntime {
 	const runtime = new TimeContextRuntime(pi, options);
-	registerDecisionRenderer(pi);
+	registerDecisionRenderer(pi, {
+		hasPrecedingStamp: (carrierEntryId) => runtime.carrierHasUiStamp(carrierEntryId),
+		timeZoneFor: (atMs) => runtime.timeZoneFor(atMs),
+	});
 	pi.registerCommand("time-config", {
 		description: "Modify pi-time-context settings",
 		handler: (args, ctx) => runtime.handleTimeConfig(args, ctx),
@@ -533,6 +633,7 @@ export function registerTimeContextExtension(pi: ExtensionAPI, options: RuntimeO
 	pi.on("session_start", (event, ctx) => runtime.onSessionStart(event, ctx));
 	pi.on("session_tree", (_event, ctx) => runtime.onTreeChanged(ctx));
 	pi.on("before_agent_start", (event) => runtime.onBeforeAgentStart(event));
+	pi.on("input", (event, ctx) => runtime.onInput(event, ctx));
 	pi.on("context", (event, ctx) => runtime.onContext(event, ctx));
 	pi.on("message_start", (event) => runtime.onMessageStart(event.message));
 	pi.on("message_update", (event) => runtime.onMessageUpdate(event.message, event.assistantMessageEvent));

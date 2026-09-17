@@ -5,6 +5,7 @@ import {
 	CARRIER_DECISION_ENTRY,
 	POLICY_REVISIONS_ENTRY,
 	SESSION_ANCHOR_ENTRY,
+	UI_STAMP_ENTRY,
 	type ActivityV1,
 	type CarrierDecisionV1,
 	type PolicyRevisionV1,
@@ -113,6 +114,47 @@ export function recoverState(
 		lastStampedCheckpointIndex,
 		revisions: revisions.sort((a, b) => a.effectiveFromMs - b.effectiveFromMs),
 	};
+}
+
+export interface UiStampAssociations {
+	/** UI stamp entry id → carrier (user message) entry id. */
+	stampToCarrier: Map<string, string>;
+	/** Carrier entry ids that have at least one preceding UI stamp. */
+	carriersWithStamp: Set<string>;
+}
+
+/**
+ * Resolve UI stamp entries to their carrier by structural adjacency: a stamp
+ * is valid when the next message entry on the branch is a user message. Any
+ * intervening message (assistant, tool result) orphans the stamps queued
+ * before it — their input never became a message. Non-message entries in
+ * between are transparent.
+ *
+ * When several stamps precede the same user message (e.g. a handled input
+ * immediately followed by a real one), only the stamp closest to the message
+ * resolves; earlier ones stay unmapped and never render, so a carrier always
+ * shows at most one stamp line above it.
+ */
+export function computeUiStampAssociations(branch: readonly SessionEntry[]): UiStampAssociations {
+	const stampToCarrier = new Map<string, string>();
+	const carriersWithStamp = new Set<string>();
+	let pending: string[] = [];
+	for (const entry of branch) {
+		if (entry.type === "custom") {
+			if (entry.customType === UI_STAMP_ENTRY) pending.push(entry.id);
+			continue;
+		}
+		if (!isSessionMessageEntry(entry)) continue;
+		if (entry.message.role === "user") {
+			const stampId = pending.at(-1);
+			if (stampId) {
+				stampToCarrier.set(stampId, entry.id);
+				carriersWithStamp.add(entry.id);
+			}
+		}
+		pending = [];
+	}
+	return { stampToCarrier, carriersWithStamp };
 }
 
 export function carrierEntryIds(branch: readonly SessionEntry[]): Set<string> {
