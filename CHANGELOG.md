@@ -7,6 +7,10 @@
 - The dim timestamp line in the chat UI now shows the exact `⟦TIME event=... at=...⟧` annotation the model receives — including `idle=` and the policy time zone — instead of a separately formatted `sent_at ... · User idle for ...` line, so what you see and what the model sees are byte-identical. Sessions created before this change keep rendering their existing stamps in the old format.
 - The timestamp line now appears above the message it belongs to instead of below it, and is rendered the moment you submit input. Its time is frozen at submission, using the same checkpoint policy as the model-facing stamp.
 
+### Fixed
+
+- With the time zone set to `local`, stamps now follow a system time zone change made while a session is running. Node resolves its zone once at startup, so a long-lived session used to keep stamping the old offset. The change is recorded as a policy revision effective from the next stamp; stamps already sent keep their zone. A pinned zone (`/time-config tz <IANA|UTC>`) or a `TZ` environment variable is never overridden.
+
 ## [0.2.0] - 2026-09-17
 
 ### Changed

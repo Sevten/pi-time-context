@@ -67,6 +67,7 @@ function createHarness(
 	session = new MockSession(),
 	options: {
 		configLoader?: RuntimeOptions["configLoader"];
+		systemTimeZone?: RuntimeOptions["systemTimeZone"];
 	} = {},
 ) {
 	const warnings: string[] = [];
@@ -86,7 +87,8 @@ function createHarness(
 					stampEveryMessage: false,
 				},
 				warnings: [],
-			}))
+			})),
+		systemTimeZone: options.systemTimeZone,
 	});
 	const context = {
 		cwd: "/project",
@@ -425,5 +427,52 @@ describe("runtime lifecycle", () => {
 		const decisions = session.customData(CARRIER_DECISION_ENTRY) as CarrierDecisionV1[];
 		expect(decisions.find((item) => item.carrierEntryId === "result-a")?.stamp).not.toBeNull();
 		expect(decisions.find((item) => item.carrierEntryId === "result-b")?.stamp).toBeNull();
+	});
+
+	it("follows a mid-session system time zone change unless a zone is pinned", async () => {
+		const previousTz = process.env.TZ;
+		process.env.TZ = "America/New_York";
+		try {
+			for (const pinned of [false, true]) {
+				const t0 = Date.UTC(2026, 0, 22, 18, 0);
+				const clock = new MutableClock(t0);
+				let zone = "America/New_York";
+				const { runtime, session, context } = createHarness(clock, new MockSession(), {
+					systemTimeZone: () => zone,
+					configLoader: () => ({
+						config: {
+							checkpointIntervalMinutes: 30,
+							previousActivityThresholdMinutes: 30,
+							timeZone: pinned ? "America/New_York" : "local",
+							stampEveryMessage: false,
+						},
+						warnings: [],
+					}),
+				});
+				await runtime.onSessionStart(startEvent(), context);
+
+				const first = user(1, "first");
+				runtime.onMessageEnd(endEvent(first), context);
+				session.appendMessage("u1", first);
+				runtime.onContext({ type: "context", messages: [first] }, context);
+
+				zone = "America/Los_Angeles";
+				const second = user(2, "second");
+				clock.value = t0 + 40 * 60_000;
+				runtime.onMessageEnd(endEvent(second), context);
+				session.appendMessage("u2", second);
+				const result = runtime.onContext({ type: "context", messages: [first, second] }, context);
+
+				expect(firstContentText(result.messages[0])).toBe(
+					"\u27e6TIME event=user_message_sent at=2026-01-22T13:00-05:00\u27e7",
+				);
+				expect(firstContentText(result.messages[1])).toContain(
+					pinned ? "at=2026-01-22T13:40-05:00" : "at=2026-01-22T10:40-08:00",
+				);
+			}
+		} finally {
+			if (previousTz === undefined) delete process.env.TZ;
+			else process.env.TZ = previousTz;
+		}
 	});
 });

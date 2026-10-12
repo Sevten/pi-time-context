@@ -7,7 +7,7 @@ import {
 	selectCarrier,
 } from "./carrier.js";
 import { createCarrierDecision, createNullDecision } from "./checkpoint.js";
-import { readClock, resolveTimeZone, systemClock } from "./clock.js";
+import { readClock, resolveTimeZone, systemClock, systemTimeZone } from "./clock.js";
 import {
 	type ConfigLoadResult,
 	type TimeContextConfig,
@@ -66,6 +66,7 @@ export interface RuntimeOptions {
 	configLoader?: () => ConfigLoadResult;
 	warn?: (message: string) => void;
 	homeDirectory?: string;
+	systemTimeZone?: () => string;
 }
 
 function emptyState(): RecoveredState {
@@ -83,6 +84,7 @@ export class TimeContextRuntime {
 	private readonly configLoader: () => ConfigLoadResult;
 	private readonly externalWarn?: (message: string) => void;
 	private readonly homeDirectory?: string;
+	private readonly systemTimeZone: () => string;
 	private readonly warnings = new Set<string>();
 	private readonly tracker: ActivityTracker;
 	private state: RecoveredState = emptyState();
@@ -103,6 +105,7 @@ export class TimeContextRuntime {
 		this.configLoader = options.configLoader ?? (() => loadConfig({ homeDirectory: this.homeDirectory }));
 		this.externalWarn = options.warn;
 		this.homeDirectory = options.homeDirectory;
+		this.systemTimeZone = options.systemTimeZone ?? systemTimeZone;
 		this.tracker = new ActivityTracker(this.clock, (message) => this.warn(message));
 	}
 
@@ -238,6 +241,7 @@ export class TimeContextRuntime {
 		const sentAtMs = readClock(this.clock);
 		if (sentAtMs === undefined || event.streamingBehavior !== undefined) return { action: "continue" };
 		this.refresh(ctx);
+		this.followSystemTimeZone(sentAtMs);
 
 		let anchor = this.state.anchor;
 		let isBaseline = this.baselinePending;
@@ -404,6 +408,7 @@ export class TimeContextRuntime {
 		if (requestAtMs === undefined) this.warn("Clock returned an invalid provider request time");
 		this.tracker.noteContextRequest(requestAtMs);
 		this.refresh(ctx);
+		if (requestAtMs !== undefined) this.followSystemTimeZone(requestAtMs);
 		const associations = associateCarrierMessages(event.messages, ctx.sessionManager.getBranch());
 		const group = findTailCarrierGroup(event.messages, associations);
 		this.createDecisionsForNewGroup(group, requestAtMs, ctx);
@@ -432,17 +437,34 @@ export class TimeContextRuntime {
 		return { systemPrompt: `${event.systemPrompt}\n\n${SYSTEM_PROMPT_NOTE}` };
 	}
 
-	private appendRevision(policy: TimePolicyV1): void {
-		const nowMs = readClock(this.clock);
-		if (nowMs === undefined) {
+	/**
+	 * With no pinned zone (timeZone "local"), follow system zone changes made
+	 * mid-session by recording a revision effective at `atMs`. Stamps already
+	 * sent keep the zone they were rendered in.
+	 */
+	private followSystemTimeZone(atMs: number): void {
+		const anchor = this.state.anchor;
+		if (!anchor || this.configLoader().config.timeZone !== "local") return;
+		const zone = this.systemTimeZone();
+		const policy = resolvePolicy(anchor, this.state.revisions, atMs);
+		if (zone === policy.timeZone || !resolveTimeZone(zone)) return;
+		this.appendRevision({ ...policy, timeZone: zone }, "system", atMs);
+	}
+
+	private appendRevision(
+		policy: TimePolicyV1,
+		source: PolicyRevisionV1["source"] = "command",
+		effectiveFromMs = readClock(this.clock),
+	): void {
+		if (effectiveFromMs === undefined) {
 			this.warn("Clock is invalid; policy revision was not recorded");
 			return;
 		}
 		const revision: PolicyRevisionV1 = {
 			version: 1,
-			effectiveFromMs: nowMs,
+			effectiveFromMs,
 			policy,
-			source: "command",
+			source,
 			scope: "global",
 		};
 		this.pi.appendEntry(POLICY_REVISIONS_ENTRY, revision);

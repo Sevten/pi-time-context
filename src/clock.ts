@@ -1,3 +1,4 @@
+import { readlinkSync } from "node:fs";
 import type { Clock } from "./types.js";
 
 export const MINUTE_MS = 60_000;
@@ -15,8 +16,27 @@ export function readClock(clock: Clock): number | undefined {
 	return isValidEpochMs(value) ? value : undefined;
 }
 
+/**
+ * The system time zone right now. Node resolves its own zone once at startup,
+ * so a long-lived process keeps the old zone after the system zone changes.
+ * Unless TZ pins the process, read the /etc/localtime link, which follows
+ * system zone changes; fall back to the process zone.
+ */
+export function systemTimeZone(): string {
+	const processZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+	if (process.env.TZ) return processZone;
+	try {
+		const match = /zoneinfo\/(.+)$/.exec(readlinkSync("/etc/localtime"));
+		const zone = match?.[1];
+		if (zone && resolveTimeZone(zone)) return zone;
+	} catch {
+		// No /etc/localtime link (Windows, containers): use the process zone.
+	}
+	return processZone;
+}
+
 export function resolveTimeZone(configured: string): string | undefined {
-	const candidate = configured === "local" ? Intl.DateTimeFormat().resolvedOptions().timeZone : configured;
+	const candidate = configured === "local" ? systemTimeZone() : configured;
 	if (!candidate) return undefined;
 	try {
 		new Intl.DateTimeFormat("en-US", { timeZone: candidate }).format(0);
