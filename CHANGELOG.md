@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [0.2.0] - 2026-10-14
 
 ### Changed
 
@@ -42,4 +42,5 @@ First release of `pi-time-context`, a Pi agent extension that gives conversation
 - Text subcommands: `/time-config show`, `interval <minutes|every>`, `threshold <minutes>`, `tz <IANA|local|UTC>`.
 - Settings persist in `~/.pi/agent/pi-time-context.json` and apply to subsequent messages immediately.
 
+[0.2.0]: https://github.com/Sevten/pi-time-context/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Sevten/pi-time-context/releases/tag/v0.1.0
