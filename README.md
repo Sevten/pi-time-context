@@ -27,13 +27,13 @@ pi install npm:@sevten/pi-time-context
 
 ## Usage
 
-Nothing to set up. In the chat UI, each stamped message shows a dim marker under it, for example:
+Nothing to set up. In the chat UI, each stamped message carries the exact annotation above it, rendered the moment you submit — for example:
 
 ```text
-sent_at 14:15 +08:00 · User idle for 2h15m
+⟦TIME event=user_message_sent at=2026-08-22T14:15+08:00 idle=2h15m⟧
 ```
 
-That marker mirrors exactly what the model received — nothing extra is written into the session file. After a compaction drops the session's early messages, the summary carries a `⟦TIME event=context_summary_created covers_from=... covers_until=...⟧` annotation so the model still knows when the session began and when the covered activity ended.
+That marker is byte-identical to what the model received — nothing extra is written into the session file. After a compaction drops the session's early messages, the summary carries a `⟦TIME event=context_summary_created covers_from=... covers_until=...⟧` annotation so the model still knows when the session began and when the covered activity ended.
 
 ### Configuring with `/time-config`
 
