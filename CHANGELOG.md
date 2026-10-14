@@ -4,14 +4,13 @@
 
 ### Changed
 
-- Stamps are now a self-describing `⟦TIME event=... at=...⟧` annotation instead of a bare `sent_at:` line, so the model can no longer mistake them for part of the message or tool output. A fixed one-line explanation of the format is appended to the system prompt.
-- Tool result stamps no longer carry an idle duration; a gap on a tool result is usually the tool's own execution time, and labeling it as user idle was misleading. User message stamps keep `idle=` when the previous activity ended more than the configured threshold ago.
-- The dim timestamp line in the chat UI shows the exact `⟦TIME event=... at=...⟧` annotation the model receives — including `idle=` and the policy time zone — so what you see and what the model sees are byte-identical. It appears above the message it belongs to and is rendered the moment you submit input, frozen at submission using the same checkpoint policy as the model-facing stamp.
-- Timestamp values and idle durations are frozen exactly as before; after upgrading, existing sessions simply re-render their stamps in the new format.
+- Stamps are now a self-describing `⟦TIME event=... at=...⟧` annotation instead of a bare `sent_at:` line, so the model can no longer mistake them for part of the message or tool output.
+- The dim timestamp line in the chat UI shows the exact `⟦TIME event=... at=...⟧` annotation the model receives, above the message it belongs to.
+- Tool result stamps no longer carry an idle duration; a gap on a tool result is usually the tool's own execution time, and labeling it as user idle was misleading.
 
 ### Fixed
 
-- With the time zone set to `local`, stamps now follow a system time zone change made while a session is running. Node resolves its zone once at startup, so a long-lived session used to keep stamping the old offset. The change is recorded as a policy revision effective from the next stamp; stamps already sent keep their zone. A pinned zone (`/time-config tz <IANA|UTC>`) or a `TZ` environment variable is never overridden.
+- With the time zone set to `local`, stamps now follow a system time zone change made while a session is running; stamps already sent keep their zone. A pinned zone (`/time-config tz <IANA|UTC>`) or a `TZ` environment variable is never overridden.
 
 ### Added
 
