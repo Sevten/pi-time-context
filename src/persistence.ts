@@ -135,7 +135,7 @@ export function parsePolicyRevision(data: unknown, warn?: WarningSink): PolicyRe
 	if (
 		!isFiniteEpoch(data.effectiveFromMs) ||
 		!policy ||
-		data.source !== "command" ||
+		(data.source !== "command" && data.source !== "system") ||
 		(data.scope !== "project" && data.scope !== "global")
 	) {
 		warn?.("Ignoring malformed policy revision version 1");

@@ -26,7 +26,7 @@ export interface PolicyRevisionV1 {
 	version: 1;
 	effectiveFromMs: number;
 	policy: TimePolicyV1;
-	source: "command";
+	source: "command" | "system";
 	scope: PolicyRevisionScope;
 }
 
