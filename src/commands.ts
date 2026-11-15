@@ -141,7 +141,7 @@ export function buildShowReport(info: TimeDisplayInfo): string {
 			? `  Source: in-session revision (since ${formatLocalMinute(
 					revisions.filter((item) => item.effectiveFromMs <= nowMs).at(-1)?.effectiveFromMs ?? nowMs,
 					revision.timeZone,
-				)}`
+				)})`
 			: "  Source: session anchor (config at startup)",
 	);
 	const stamped = decisions.filter((decision) => decision.stamp).slice(-5).reverse();

@@ -94,6 +94,8 @@ describe("buildShowReport and widgetLines", () => {
 		const report = buildShowReport({ anchor: base, revisions: [rev], decisions: [], nowMs: T0 + 2000 });
 		expect(report).toContain("15 minutes");
 		expect(report).toContain("in-session revision");
+		expect(report).toContain("(since ");
+		expect(report).toMatch(/\(since [^)]*\)/);
 		expect(report).toContain("Next checkpoint");
 	});
 
