@@ -133,4 +133,28 @@ describe("every-message mode", () => {
 			elapsedMinutes: 30,
 		});
 	});
+
+	it("flags a clock anomaly when the computed index falls behind the last stamped one", () => {
+		// A backward clock jump yields a checkpoint index smaller than what was
+		// already stamped; the anomaly must surface even with no activity gap.
+		const result = decide(INTERVAL, 3);
+		expect(result.decision.checkpointIndex).toBe(1);
+		expect(result.clockAnomaly).toBe("backwards");
+		expect(result.decision.stamp).toBeNull();
+	});
+
+	it("still stamps in every-message mode but records the index anomaly", () => {
+		const base = everyAnchor();
+		const result = createCarrierDecision({
+			carrierEntryId: "carrier",
+			carrierKind: "user",
+			firstSentAtMs: INTERVAL,
+			t0Ms: 0,
+			policy: base.policy,
+			lastStampedCheckpointIndex: 3,
+			isBaseline: false,
+		});
+		expect(result.decision.stamp).toEqual({});
+		expect(result.clockAnomaly).toBe("backwards");
+	});
 });

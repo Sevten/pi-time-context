@@ -28,6 +28,11 @@ export function checkpointIndexAt(firstSentAtMs: number, t0Ms: number, policy: T
 
 export function createCarrierDecision(input: DecisionInput): DecisionResult {
 	const checkpointIndex = input.isBaseline ? 0 : checkpointIndexAt(input.firstSentAtMs, input.t0Ms, input.policy);
+	// A computed index below the last stamped one means the wall clock moved
+	// backwards (or the anchor changed underneath us): flag it just like a
+	// negative activity gap so callers can warn instead of silently
+	// under-stamping until the clock catches up.
+	const indexBackwards = !input.isBaseline && checkpointIndex < input.lastStampedCheckpointIndex;
 	// In every-message mode every new carrier is stamped; the checkpoint index is
 	// still recorded so switching back to interval mode resumes at the current bucket.
 	const checkpointDue = input.policy.stampEveryMessage || checkpointIndex > input.lastStampedCheckpointIndex;
@@ -42,12 +47,13 @@ export function createCarrierDecision(input: DecisionInput): DecisionResult {
 				checkpointIndex,
 				stamp: null,
 			},
+			clockAnomaly: indexBackwards ? "backwards" : undefined,
 		};
 	}
 
 	const previous = input.isBaseline ? undefined : input.previousActivity;
 	const gapMs = previous ? input.firstSentAtMs - previous.completedAtMs : undefined;
-	const backwards = gapMs !== undefined && gapMs < 0;
+	const backwards = indexBackwards || (gapMs !== undefined && gapMs < 0);
 	// Only user-message stamps carry idle; on tool results the gap is usually
 	// the tool's own execution time, which would read as misleading user idle.
 	const includeElapsed =

@@ -388,7 +388,7 @@ export class TimeContextRuntime {
 				previousActivity: findPreviousCompletedActivity(selected, this.state.activitiesByKey),
 			});
 			if (result.clockAnomaly) {
-				this.warn("System clock moved backwards; user_idle_for was omitted");
+				this.warn("System clock moved backwards; stamp checkpoint index regressed and user_idle_for was omitted");
 			}
 			this.persistDecision(result.decision);
 		}
