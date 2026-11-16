@@ -59,34 +59,37 @@ export function isActivityOnBranch(activity: ActivityV1, references: BranchRefer
 	return references.messageEntryIds.has(activity.messageEntryId);
 }
 
-export function recoverState(
-	entries: readonly SessionEntry[],
-	branch: readonly SessionEntry[],
-	warn?: WarningSink,
-): RecoveredState {
-	const references = collectBranchReferences(branch);
-	const activitiesByKey = new Map<string, ActivityV1>();
-	const decisionsByCarrierId = new Map<string, CarrierDecisionV1>();
-	const revisions: PolicyRevisionV1[] = [];
-	let anchor: RecoveredState["anchor"];
+interface StateAccumulator {
+	anchor: RecoveredState["anchor"];
+	activitiesByKey: Map<string, ActivityV1>;
+	decisionsByCarrierId: Map<string, CarrierDecisionV1>;
+	revisions: PolicyRevisionV1[];
+	lastStampedCheckpointIndex: number;
+}
 
+function consumeRecords(
+	acc: StateAccumulator,
+	entries: readonly SessionEntry[],
+	references: BranchReferences,
+	warn?: WarningSink,
+): void {
 	for (const record of recordsFromEntries(entries)) {
-		if (record.customType === SESSION_ANCHOR_ENTRY && !anchor) {
-			anchor = parseSessionAnchor(record.data, warn);
+		if (record.customType === SESSION_ANCHOR_ENTRY && !acc.anchor) {
+			acc.anchor = parseSessionAnchor(record.data, warn);
 			continue;
 		}
 		if (record.customType === ACTIVITY_FACTS_ENTRY) {
 			const facts = parseActivityFacts(record.data, warn);
 			for (const activity of facts?.activities ?? []) {
-				if (isActivityOnBranch(activity, references) && !activitiesByKey.has(activity.key)) {
-					activitiesByKey.set(activity.key, activity);
+				if (isActivityOnBranch(activity, references) && !acc.activitiesByKey.has(activity.key)) {
+					acc.activitiesByKey.set(activity.key, activity);
 				}
 			}
 			continue;
 		}
 		if (record.customType === POLICY_REVISIONS_ENTRY) {
 			const revision = parsePolicyRevision(record.data, warn);
-			if (revision) revisions.push(revision);
+			if (revision) acc.revisions.push(revision);
 			continue;
 		}
 		if (record.customType === CARRIER_DECISION_ENTRY) {
@@ -94,25 +97,71 @@ export function recoverState(
 			if (
 				decision &&
 				references.messageEntryIds.has(decision.carrierEntryId) &&
-				!decisionsByCarrierId.has(decision.carrierEntryId)
+				!acc.decisionsByCarrierId.has(decision.carrierEntryId)
 			) {
-				decisionsByCarrierId.set(decision.carrierEntryId, decision);
+				acc.decisionsByCarrierId.set(decision.carrierEntryId, decision);
+				if (decision.stamp) {
+					acc.lastStampedCheckpointIndex = Math.max(
+						acc.lastStampedCheckpointIndex,
+						decision.checkpointIndex,
+					);
+				}
 			}
 		}
 	}
+}
 
-	let lastStampedCheckpointIndex = 0;
-	for (const decision of decisionsByCarrierId.values()) {
-		if (decision.stamp) {
-			lastStampedCheckpointIndex = Math.max(lastStampedCheckpointIndex, decision.checkpointIndex);
-		}
-	}
+export function recoverState(
+	entries: readonly SessionEntry[],
+	branch: readonly SessionEntry[],
+	warn?: WarningSink,
+): RecoveredState {
+	const acc: StateAccumulator = {
+		anchor: undefined,
+		activitiesByKey: new Map(),
+		decisionsByCarrierId: new Map(),
+		revisions: [],
+		lastStampedCheckpointIndex: 0,
+	};
+	consumeRecords(acc, entries, collectBranchReferences(branch), warn);
 	return {
-		anchor,
-		activitiesByKey,
-		decisionsByCarrierId,
-		lastStampedCheckpointIndex,
-		revisions: revisions.sort((a, b) => a.effectiveFromMs - b.effectiveFromMs),
+		anchor: acc.anchor,
+		activitiesByKey: acc.activitiesByKey,
+		decisionsByCarrierId: acc.decisionsByCarrierId,
+		lastStampedCheckpointIndex: acc.lastStampedCheckpointIndex,
+		revisions: acc.revisions.sort((a, b) => a.effectiveFromMs - b.effectiveFromMs),
+	};
+}
+
+/**
+ * Incrementally fold newly appended entries into a previously recovered
+ * state, avoiding a full re-scan of the whole session file. Session files
+ * are append-only, so entries before `startIndex` are assumed unchanged;
+ * callers must rebuild from scratch (or invalidate the cache) whenever the
+ * tree changes shape, because activities/decisions filtered against an old
+ * branch cannot be re-validated here.
+ */
+export function extendRecoveredState(
+	previous: RecoveredState,
+	entries: readonly SessionEntry[],
+	startIndex: number,
+	branch: readonly SessionEntry[],
+	warn?: WarningSink,
+): RecoveredState {
+	const acc: StateAccumulator = {
+		anchor: previous.anchor,
+		activitiesByKey: previous.activitiesByKey,
+		decisionsByCarrierId: previous.decisionsByCarrierId,
+		revisions: [...previous.revisions],
+		lastStampedCheckpointIndex: previous.lastStampedCheckpointIndex,
+	};
+	consumeRecords(acc, entries.slice(startIndex), collectBranchReferences(branch), warn);
+	return {
+		anchor: acc.anchor,
+		activitiesByKey: acc.activitiesByKey,
+		decisionsByCarrierId: acc.decisionsByCarrierId,
+		lastStampedCheckpointIndex: acc.lastStampedCheckpointIndex,
+		revisions: acc.revisions.sort((a, b) => a.effectiveFromMs - b.effectiveFromMs),
 	};
 }
 

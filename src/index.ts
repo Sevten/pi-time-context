@@ -42,6 +42,7 @@ import {
 	computeUiStampAssociations,
 	isSessionMessageEntry,
 	recoverState,
+	extendRecoveredState,
 } from "./state.js";
 import { registerDecisionRenderer } from "./visibility.js";
 import {
@@ -94,6 +95,11 @@ export class TimeContextRuntime {
 	private refreshedEntryTailId?: string;
 	private refreshedBranchCount = -1;
 	private refreshedBranchTailId?: string;
+	/** Number of entries already folded into `state`; only the tail is re-scanned. */
+	private scannedEntryCount = -1;
+	private scannedEntryTailId?: string;
+	/** False after a tree-shape change, when the incremental fold must be rebuilt from scratch. */
+	private stateCacheValid = false;
 	private uiStampToCarrier = new Map<string, string>();
 	private carriersWithUiStamp = new Set<string>();
 	/** Time zone of a predicted stamp whose anchor is not yet persisted. */
@@ -138,7 +144,29 @@ export class TimeContextRuntime {
 			return;
 		}
 
-		this.state = recoverState(entries, branch, (message) => this.warn(message));
+		// Append-only fast path: if the previously scanned prefix is unchanged
+		// (same boundary entry id, count only grew), fold just the new tail into
+		// the cached state instead of re-parsing the whole session file. Any
+		// other shape change (tree switch, compaction rewrite) rebuilds fully.
+		const canExtend =
+			!force &&
+			this.stateCacheValid &&
+			entries.length > this.scannedEntryCount &&
+			entries[this.scannedEntryCount - 1]?.id === this.scannedEntryTailId;
+		if (canExtend && this.scannedEntryCount > 0) {
+			this.state = extendRecoveredState(
+				this.state,
+				entries,
+				this.scannedEntryCount,
+				branch,
+				(message) => this.warn(message),
+			);
+		} else {
+			this.state = recoverState(entries, branch, (message) => this.warn(message));
+		}
+		this.stateCacheValid = true;
+		this.scannedEntryCount = entries.length;
+		this.scannedEntryTailId = entryTailId;
 		const uiStamps = computeUiStampAssociations(branch);
 		this.uiStampToCarrier = uiStamps.stampToCarrier;
 		this.carriersWithUiStamp = uiStamps.carriersWithStamp;
@@ -344,6 +372,10 @@ export class TimeContextRuntime {
 	}
 
 	onTreeChanged(ctx: ExtensionContext): void {
+		// The active branch may have changed shape without the entry list moving;
+		// branch-filtered activities/decisions in the cached state cannot be
+		// re-validated incrementally, so force a full rebuild.
+		this.stateCacheValid = false;
 		this.refresh(ctx);
 		for (const id of carrierEntryIds(ctx.sessionManager.getBranch())) this.activationCarrierIds.add(id);
 	}
