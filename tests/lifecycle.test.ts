@@ -306,7 +306,26 @@ describe("runtime lifecycle", () => {
 			session.appendMessage("u1", prompt);
 			clock.value = t0 + 2;
 			runtime.onContext({ type: "context", messages: [prompt] }, context);
-			expect(runtime.carrierHasUiStamp("u1")).toBe(true);
+		expect(runtime.carrierHasUiStamp("u1")).toBe(true);
+		});
+
+		it("anchors the persisted t0 at the submission time even when processing crosses a minute boundary", async () => {
+			const t0 = Date.UTC(2026, 7, 22, 6, 0);
+			const clock = new MutableClock(t0);
+			const { runtime, session, context } = createHarness(clock);
+			await runtime.onSessionStart(startEvent(), context);
+
+			// Submit at 06:00, finish processing after the minute boundary.
+			clock.value = t0;
+			runtime.onInput(inputEvent("hello"), context);
+			clock.value = t0 + 90_000;
+			const prompt = user(t0, "hello");
+			runtime.onMessageEnd(endEvent(prompt), context);
+			session.appendMessage("u1", prompt);
+
+			const anchors = session.customData(SESSION_ANCHOR_ENTRY) as SessionAnchorV1[];
+			expect(anchors).toHaveLength(1);
+			expect(anchors[0]?.t0Ms).toBe(t0);
 		});
 
 		it("writes nothing when the checkpoint is not due", async () => {

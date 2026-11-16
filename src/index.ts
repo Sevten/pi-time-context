@@ -98,6 +98,8 @@ export class TimeContextRuntime {
 	private carriersWithUiStamp = new Set<string>();
 	/** Time zone of a predicted stamp whose anchor is not yet persisted. */
 	private uiStampTimeZone?: string;
+	/** Clock reading of the latest user submission, consumed by its message_end. */
+	private pendingUserSentAtMs?: number;
 
 	constructor(pi: ExtensionAPI, options: RuntimeOptions = {}) {
 		this.pi = pi;
@@ -208,7 +210,12 @@ export class TimeContextRuntime {
 			.some((entry) => isSessionMessageEntry(entry) && entry.message.role === "user");
 		if (hasHistoricalUser) return;
 
-		const anchor = this.createAnchor("first_user_processed", processedAtMs, ctx);
+		// The UI stamp predicted at input time uses the submission timestamp, so
+		// the persisted anchor must use the same t0 — anchoring to the (later)
+		// processing time would drift up to a minute across a minute boundary.
+		const sentAtMs = this.pendingUserSentAtMs;
+		this.pendingUserSentAtMs = undefined;
+		const anchor = this.createAnchor("first_user_processed", sentAtMs ?? processedAtMs, ctx);
 		this.pi.appendEntry(SESSION_ANCHOR_ENTRY, anchor);
 		this.state.anchor = anchor;
 		this.baselinePending = true;
@@ -240,6 +247,7 @@ export class TimeContextRuntime {
 	onInput(event: InputEvent, ctx: ExtensionContext): { action: "continue" } {
 		const sentAtMs = readClock(this.clock);
 		if (sentAtMs === undefined || event.streamingBehavior !== undefined) return { action: "continue" };
+		this.pendingUserSentAtMs = sentAtMs;
 		this.refresh(ctx);
 		this.followSystemTimeZone(sentAtMs);
 
