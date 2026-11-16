@@ -2,8 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The session anchor's `t0` is now taken from the user's submission time instead of the later processing time, so the UI stamp shown above the message and the anchor the model sees can no longer disagree by a minute when the first message straddles a minute boundary. Falls back to the processing time when no input event preceded the message.
+- Clock rollback is now detected symmetrically: a computed checkpoint index that falls below the last stamped index is reported as a clock anomaly (with a warning) instead of silently under-stamping until the wall clock catches up. Tests now cover the rollback path.
+- Extreme idle durations of 24 hours or more render as `Xd` / `Xd Yh` instead of unbounded hour counts (`idle=1234h`), keeping the ⟦TIME⟧ idle field parseable for multi-day sessions.
+
 ### Changed
 
+- Session state is now folded incrementally: appended entries are merged into the cached state instead of re-parsing the whole session file on every input/context/message-end/turn-end event. Any non-append-only change (tree switch, compaction rewrite) still triggers a full rebuild.
+- The config file is read once and cached; `followSystemTimeZone` no longer synchronously re-reads it on every input/context event. The cache is invalidated after an explicit config write through `/time-config`.
 - The pi devDependency is tightened from `^1.1.0` to `~1.1.0` (with npm `overrides` pinning the `@earendil-works/*` transitive packages to 1.1.x), so local type checks run against the same minor as the host instead of drifting ahead of it. `pi-tui` moves from 0.85.1 to ~1.1.0 for the same reason.
 
 ### Added
