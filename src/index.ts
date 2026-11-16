@@ -100,6 +100,8 @@ export class TimeContextRuntime {
 	private uiStampTimeZone?: string;
 	/** Clock reading of the latest user submission, consumed by its message_end. */
 	private pendingUserSentAtMs?: number;
+	/** Cached config file load; invalidated after an explicit config write. */
+	private cachedConfigLoad?: ConfigLoadResult;
 
 	constructor(pi: ExtensionAPI, options: RuntimeOptions = {}) {
 		this.pi = pi;
@@ -452,7 +454,9 @@ export class TimeContextRuntime {
 	 */
 	private followSystemTimeZone(atMs: number): void {
 		const anchor = this.state.anchor;
-		if (!anchor || this.configLoader().config.timeZone !== "local") return;
+		// Cached load: the config file is only re-read after an explicit write
+		// through this runtime, not on every input/context event.
+		if (!anchor || this.loadConfigWithWarnings().config.timeZone !== "local") return;
 		const zone = this.systemTimeZone();
 		const policy = resolvePolicy(anchor, this.state.revisions, atMs);
 		if (zone === policy.timeZone || !resolveTimeZone(zone)) return;
@@ -488,9 +492,9 @@ export class TimeContextRuntime {
 	}
 
 	private loadConfigWithWarnings(): ConfigLoadResult {
-		const loaded = this.configLoader();
-		for (const warning of loaded.warnings) this.warn(warning);
-		return loaded;
+		if (!this.cachedConfigLoad) this.cachedConfigLoad = this.configLoader();
+		for (const warning of this.cachedConfigLoad.warnings) this.warn(warning);
+		return this.cachedConfigLoad;
 	}
 
 	private loadCurrentConfig(ctx: ExtensionContext): TimeContextConfig {
@@ -553,6 +557,7 @@ export class TimeContextRuntime {
 		const targetPath = globalConfigPath({ homeDirectory: this.homeDirectory });
 		try {
 			writeGlobalConfig(targetPath, change.patch);
+			this.cachedConfigLoad = undefined;
 		} catch (error) {
 			return { error: `Failed to write ${targetPath}: ${error instanceof Error ? error.message : String(error)}` };
 		}

@@ -328,6 +328,40 @@ describe("runtime lifecycle", () => {
 			expect(anchors[0]?.t0Ms).toBe(t0);
 		});
 
+		it("caches the config load across input and context events", async () => {
+			const t0 = Date.UTC(2026, 7, 22, 6, 0);
+			const clock = new MutableClock(t0);
+			let loads = 0;
+			const { runtime, session, context } = createHarness(clock, new MockSession(), {
+				configLoader: () => {
+					loads += 1;
+					return {
+						config: {
+							checkpointIntervalMinutes: 30,
+							previousActivityThresholdMinutes: 30,
+							timeZone: "UTC",
+							stampEveryMessage: false,
+						},
+						warnings: [],
+					};
+				},
+			});
+			await runtime.onSessionStart(startEvent(), context);
+			const afterStart = loads;
+
+			clock.value = t0;
+			runtime.onInput(inputEvent("hello"), context);
+			const prompt = user(t0, "hello");
+			runtime.onMessageEnd(endEvent(prompt), context);
+			session.appendMessage("u1", prompt);
+			clock.value = t0 + 31 * 60_000;
+			runtime.onContext({ type: "context", messages: [prompt] }, context);
+			runtime.onInput(inputEvent("again"), context);
+
+			// Only the session-start load; input/context re-reads hit the cache.
+			expect(loads).toBe(afterStart);
+		});
+
 		it("writes nothing when the checkpoint is not due", async () => {
 			const t0 = Date.UTC(2026, 7, 22, 6, 0);
 			const clock = new MutableClock(t0);
