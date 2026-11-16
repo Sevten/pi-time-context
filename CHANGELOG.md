@@ -4,6 +4,12 @@
 
 ### Changed
 
+- The pi devDependency is tightened from `^1.1.0` to `~1.1.0` (with npm `overrides` pinning the `@earendil-works/*` transitive packages to 1.1.x), so local type checks run against the same minor as the host instead of drifting ahead of it. `pi-tui` moves from 0.85.1 to ~1.1.0 for the same reason.
+
+### Added
+
+- `npm run check-host` (also part of `validate`): compares the globally installed pi version against the declared devDependency range and fails loudly on a mismatch, so "green locally, broken on the host" drift becomes visible. Skips cleanly (exit 0) when no host pi is present, e.g. on CI.
+
 - The `scope` field was removed from the policy revision record (schema v1). Policy revisions have always been global for the whole session — there is no project-level configuration. Records persisted by earlier versions that carry `scope: "global"` are still read; a revision claiming any other scope is rejected as malformed.
 
 ## [0.2.0] - 2026-10-14

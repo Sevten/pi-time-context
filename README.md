@@ -69,7 +69,13 @@ npm ci --ignore-scripts
 npm run validate
 ```
 
-`npm run validate` runs the TypeScript check, the Vitest suite, and an npm package dry run.
+`npm run validate` runs the TypeScript check, the Vitest suite, an npm package dry run, and the host-alignment sentinel (`npm run check-host`).
+
+### Type baseline and host alignment
+
+The devDependency on `@earendil-works/pi-coding-agent` is pinned with `~1.1.0` (and its `@earendil-works/*` siblings via npm `overrides`), not `^1.1.0`, so local type checks run against the same 1.x minor as the installed host instead of silently drifting to a newer minor where types may differ.
+
+`npm run check-host` verifies this mechanically: it locates the globally installed `pi` (`which pi` → symlink resolved → its own `package.json`), compares its version against the devDependency range, and exits non-zero on a mismatch. If no host `pi` can be detected (e.g. CI or a clean machine), it prints a skip notice and exits 0, so `validate` never fails for lack of a host.
 
 ## License
 
