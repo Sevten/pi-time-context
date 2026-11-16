@@ -85,7 +85,7 @@ describe("buildShowReport and widgetLines", () => {
 			effectiveFromMs: T0 + 1000,
 			policy: { ...base.policy, checkpointIntervalMs: 15 * 60_000 },
 			source: "command",
-			scope: "project",
+			scope: "global",
 		},
 		() => {},
 	)!;
@@ -106,7 +106,7 @@ describe("buildShowReport and widgetLines", () => {
 				effectiveFromMs: T0 + 1000,
 				policy: { ...base.policy, stampEveryMessage: true },
 				source: "command",
-				scope: "project",
+				scope: "global",
 			},
 			() => {},
 		)!;

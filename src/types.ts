@@ -20,14 +20,14 @@ export interface TimePolicyV1 {
 	stampEveryMessage: boolean;
 }
 
-export type PolicyRevisionScope = "project" | "global";
-
 export interface PolicyRevisionV1 {
 	version: 1;
 	effectiveFromMs: number;
 	policy: TimePolicyV1;
 	source: "command" | "system";
-	scope: PolicyRevisionScope;
+	// Scope was removed from the v1 schema: policy revisions are global for the
+	// whole session (there is no project-level configuration). Old persisted
+	// revisions may still carry scope:"global"; the parser ignores it.
 }
 
 export interface SessionAnchorV1 {

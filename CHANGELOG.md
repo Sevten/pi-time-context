@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- The `scope` field was removed from the policy revision record (schema v1). Policy revisions have always been global for the whole session — there is no project-level configuration. Records persisted by earlier versions that carry `scope: "global"` are still read; a revision claiming any other scope is rejected as malformed.
+
 ## [0.2.0] - 2026-10-14
 
 ### Changed

@@ -465,7 +465,6 @@ export class TimeContextRuntime {
 			effectiveFromMs,
 			policy,
 			source,
-			scope: "global",
 		};
 		this.pi.appendEntry(POLICY_REVISIONS_ENTRY, revision);
 		this.state.revisions = [...this.state.revisions, revision].sort(

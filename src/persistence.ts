@@ -136,7 +136,9 @@ export function parsePolicyRevision(data: unknown, warn?: WarningSink): PolicyRe
 		!isFiniteEpoch(data.effectiveFromMs) ||
 		!policy ||
 		(data.source !== "command" && data.source !== "system") ||
-		(data.scope !== "project" && data.scope !== "global")
+		// scope was removed from the v1 schema; tolerate its old value for
+		// revisions persisted by earlier versions, reject anything else.
+		(data.scope !== undefined && data.scope !== "global")
 	) {
 		warn?.("Ignoring malformed policy revision version 1");
 		return undefined;
@@ -146,7 +148,6 @@ export function parsePolicyRevision(data: unknown, warn?: WarningSink): PolicyRe
 		effectiveFromMs: data.effectiveFromMs,
 		policy,
 		source: data.source,
-		scope: data.scope,
 	};
 }
 

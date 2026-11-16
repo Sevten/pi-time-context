@@ -17,11 +17,42 @@ function revision(effectiveFromMs: number, patch: Partial<{ interval: number; tz
 				stampEveryMessage: patch.every ?? false,
 			},
 			source: "command",
-			scope: "project",
+			scope: "global",
 		},
 		() => {},
 	);
 }
+
+describe("parsePolicyRevision scope tolerance", () => {
+	const valid = {
+		version: 1 as const,
+		effectiveFromMs: T0,
+		policy: {
+			checkpointIntervalMs: 30 * 60_000,
+			previousActivityThresholdMs: 30 * 60_000,
+			timeZone: "UTC",
+			stampEveryMessage: false,
+		},
+		source: "command" as const,
+	};
+
+	it("still parses legacy records that carry scope global and drops the field", () => {
+		const parsed = parsePolicyRevision({ ...valid, scope: "global" });
+		expect(parsed).toBeDefined();
+		expect(parsed).not.toHaveProperty("scope");
+	});
+
+	it("rejects records claiming a project scope", () => {
+		const warnings: string[] = [];
+		const parsed = parsePolicyRevision({ ...valid, scope: "project" }, (message) => warnings.push(message));
+		expect(parsed).toBeUndefined();
+		expect(warnings).toContain("Ignoring malformed policy revision version 1");
+	});
+
+	it("accepts records without scope (current writer shape)", () => {
+		expect(parsePolicyRevision(valid)).toBeDefined();
+	});
+});
 
 describe("resolvePolicy", () => {
 	it("returns the anchor policy before any revision", () => {
