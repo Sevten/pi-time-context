@@ -33,7 +33,7 @@ export const MAX_INTERVAL_MINUTES = 10_080;
 export function isValidIntervalMinutes(value: unknown): value is number {
 	return (
 		typeof value === "number" &&
-		Number.isFinite(value) &&
+		Number.isInteger(value) &&
 		value >= MIN_INTERVAL_MINUTES &&
 		value <= MAX_INTERVAL_MINUTES
 	);
@@ -79,7 +79,7 @@ function applyLayer(
 		if (isValidIntervalMinutes(value)) {
 			next[key] = value;
 		} else {
-			warnings.push(`${path}: ${key} must be a finite number from 1 through 10080`);
+			warnings.push(`${path}: ${key} must be an integer number of minutes from 1 through 10080`);
 		}
 	}
 

@@ -54,6 +54,24 @@ describe("configuration", () => {
 		expect(result.warnings).toHaveLength(1);
 	});
 
+	it("rejects non-integer interval with a clear warning", async () => {
+		const root = await mkdtemp(join(tmpdir(), "pi-time-context-fractional-interval-"));
+		temporaryDirectories.push(root);
+		const home = join(root, "home");
+		await mkdir(join(home, ".pi", "agent"), { recursive: true });
+		await writeFile(
+			join(home, ".pi", "agent", "pi-time-context.json"),
+			JSON.stringify({ checkpointIntervalMinutes: 0.5 }),
+		);
+
+		const result = loadConfig({ homeDirectory: home });
+		// invalid value is rejected and falls back to the default (10)
+		expect(result.config.checkpointIntervalMinutes).toBe(10);
+		expect(result.warnings).toEqual([
+			`${join(home, ".pi", "agent", "pi-time-context.json")}: checkpointIntervalMinutes must be an integer number of minutes from 1 through 10080`,
+		]);
+	});
+
 	it("warns about unknown fields", async () => {
 		const root = await mkdtemp(join(tmpdir(), "pi-time-context-unknown-config-"));
 		temporaryDirectories.push(root);
