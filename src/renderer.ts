@@ -21,6 +21,13 @@ export function formatElapsedMinutes(totalMinutes: number): string {
 	const safeMinutes = Math.max(0, Math.trunc(totalMinutes));
 	const hours = Math.floor(safeMinutes / 60);
 	const minutes = safeMinutes % 60;
+	// Extreme idle (sessions left open for days) reads better capped at day
+	// granularity; minutes beyond 24h would only bloat the annotation.
+	if (hours >= 24) {
+		const days = Math.floor(hours / 24);
+		const restHours = hours % 24;
+		return restHours === 0 ? `${days}d` : `${days}d${restHours}h`;
+	}
 	if (hours === 0) return `${minutes}m`;
 	if (minutes === 0) return `${hours}h`;
 	return `${hours}h${minutes}m`;

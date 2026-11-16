@@ -77,4 +77,10 @@ describe("renderer", () => {
 		expect(formatElapsedMinutes(120)).toBe("2h");
 		expect(formatElapsedMinutes(135)).toBe("2h15m");
 	});
+
+	it("caps extreme idle at day granularity beyond 24h", () => {
+		expect(formatElapsedMinutes(24 * 60)).toBe("1d");
+		expect(formatElapsedMinutes(26 * 60 + 30)).toBe("1d2h");
+		expect(formatElapsedMinutes(72 * 60)).toBe("3d");
+	});
 });
