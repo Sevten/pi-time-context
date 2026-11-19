@@ -381,6 +381,40 @@ describe("runtime lifecycle", () => {
 			expect(stampEntries(session)).toHaveLength(1);
 		});
 
+		it("stamps steering inputs like normal inputs", async () => {
+			const t0 = Date.UTC(2026, 7, 22, 6, 0);
+			const clock = new MutableClock(t0);
+			const { runtime, session, context } = createHarness(clock);
+			await runtime.onSessionStart(startEvent(), context);
+
+			clock.value = t0 + 1;
+			runtime.onInput(inputEvent("first"), context);
+			const prompt = user(1, "first");
+			runtime.onMessageEnd(endEvent(prompt), context);
+			session.appendMessage("u1", prompt);
+			runtime.onContext({ type: "context", messages: [prompt] }, context);
+			expect(stampEntries(session)).toHaveLength(1);
+
+			// Steering input during streaming (streamingBehavior set) must still
+			// get a UI stamp, so it matches the model-side carrier annotation.
+			clock.value = t0 + 31 * 60_000;
+			runtime.onInput(
+				{ type: "input", text: "steer", source: "interactive", streamingBehavior: "steer" } as never,
+				context,
+			);
+			expect(stampEntries(session)).toHaveLength(2);
+			expect((session.customData(UI_STAMP_ENTRY) as UiStampV1[])[1]).toEqual({
+				version: 1,
+				sentAtMs: t0 + 31 * 60_000,
+			});
+
+			const steerPrompt = user(t0 + 31 * 60_000, "steer");
+			runtime.onMessageEnd(endEvent(steerPrompt), context);
+			session.appendMessage("u2", steerPrompt);
+			runtime.onTreeChanged(context);
+			expect(runtime.carrierHasUiStamp("u2")).toBe(true);
+		});
+
 		it("stops mapping a stamp once an assistant message intervenes", async () => {
 			const t0 = Date.UTC(2026, 7, 22, 6, 0);
 			const clock = new MutableClock(t0);

@@ -271,12 +271,13 @@ export class TimeContextRuntime {
 	 * The TUI renders a custom entry exactly once, at append time, so the entry
 	 * must carry its display data: we predict the checkpoint stamp here with
 	 * the same logic the context-time decision uses. Baseline stamps freeze to
-	 * t0 exactly like the persisted decision; steering inputs are skipped
-	 * because the model stamp may land on a tool-result carrier instead.
+	 * t0 exactly like the persisted decision. Steering inputs are stamped too,
+	 * with the same user-carrier kind, so the UI stamp above the message and
+	 * the model-side annotation stay identical.
 	 */
 	onInput(event: InputEvent, ctx: ExtensionContext): { action: "continue" } {
 		const sentAtMs = readClock(this.clock);
-		if (sentAtMs === undefined || event.streamingBehavior !== undefined) return { action: "continue" };
+		if (sentAtMs === undefined) return { action: "continue" };
 		this.pendingUserSentAtMs = sentAtMs;
 		this.refresh(ctx);
 		this.followSystemTimeZone(sentAtMs);
