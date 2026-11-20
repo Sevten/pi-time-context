@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Tests for `time-config-menu.ts` (menu state machine: main list, presets, every-message mode, Custom inline editing incl. invalid input handling and escape/backspace behavior) and `fork-copy.ts` (anchor/activity/decision copying: dedup, branch filtering, malformed and missing previous-session files).
+
 ### Fixed
 
 - Steering inputs (submitted while streaming, `streamingBehavior` set) now get a UI stamp like normal inputs, so the dim stamp line above the message matches the model-side carrier annotation instead of falling back to a stamp line rendered below the message.
